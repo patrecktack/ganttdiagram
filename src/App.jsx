@@ -9,7 +9,7 @@ import {
 import { it } from 'date-fns/locale';
 import { supabase } from './supabaseClient';
 
-import Login from './components/Login';
+import Login from './components/login';
 import Gantt from './components/Gantt';
 
 const COLORS = [
