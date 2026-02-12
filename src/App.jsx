@@ -45,7 +45,7 @@ export default function App() {
   const [formActivity, setFormActivity] = useState({ id: null, title: '', start: new Date(), end: new Date(), color: COLORS[0].class });
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  // --- NUOVI STATI PER I POPUP APPLE STYLE ---
+  // --- STATI PER I POPUP APPLE STYLE ---
   const [customAlert, setCustomAlert] = useState(null); // { title, message, type: 'error'|'success' }
   const [isDeleteAccountConfirmOpen, setIsDeleteAccountConfirmOpen] = useState(false);
 
@@ -99,7 +99,6 @@ export default function App() {
     if (!formActivity.title || !session) return;
     const daysDiff = differenceInCalendarDays(formActivity.end, formActivity.start) + 1;
     
-    // SOSTITUITO ALERT BROWSER CON APPLE ALERT
     if (daysDiff < 1) { 
         showAppleAlert("Attenzione", "La data di fine deve essere dopo la data di inizio.", "error");
         return; 
@@ -158,7 +157,6 @@ export default function App() {
     }
   };
 
-  // Funzione che apre il modale di conferma (invece di window.confirm)
   const requestDeleteAccount = () => {
     setIsDeleteAccountConfirmOpen(true);
   };
@@ -173,14 +171,13 @@ export default function App() {
     const { error } = await supabase.rpc('delete_user');
     
     setLoadingSettings(false);
-    setIsDeleteAccountConfirmOpen(false); // Chiude modale
+    setIsDeleteAccountConfirmOpen(false);
     
     if (error) {
       console.error(error);
       showAppleAlert("Errore", "Impossibile cancellare l'account. Prova a fare Logout e rientrare.", "error");
     } else {
       await supabase.auth.signOut();
-      // Non serve alert qui, l'utente viene buttato fuori
     }
   };
 
@@ -394,7 +391,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- NUOVO: MODALE CONFERMA CANCELLAZIONE ACCOUNT (Apple Style) --- */}
+      {/* --- MODALE CONFERMA CANCELLAZIONE ACCOUNT (Apple Style) --- */}
       {isDeleteAccountConfirmOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div className="absolute inset-0 backdrop-blur-md bg-black/50" onClick={() => setIsDeleteAccountConfirmOpen(false)} />
@@ -416,7 +413,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- NUOVO: ALERT GENERICO (Apple Style) --- */}
+      {/* --- ALERT GENERICO (Apple Style) --- */}
       {customAlert && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className="absolute inset-0 backdrop-blur-md bg-black/20" onClick={() => setCustomAlert(null)} />

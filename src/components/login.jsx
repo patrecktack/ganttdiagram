@@ -37,13 +37,17 @@ export default function Login() {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // --- FUNZIONE LOGIN GOOGLE ---
+  // --- FUNZIONE LOGIN GOOGLE AGGIORNATA ---
   const handleGoogleLogin = async () => {
     setLoading(true);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin, // Riporta l'utente al sito dopo il login
+        redirectTo: window.location.origin, 
+        queryParams: {
+          // Questa riga obbliga Google a chiederti quale account usare
+          prompt: 'select_account', 
+        },
       },
     });
     if (error) setErrorMsg(error.message);
