@@ -1,287 +1,199 @@
-import React, { useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { 
-  format, eachDayOfInterval, eachMonthOfInterval, 
-  startOfWeek, endOfWeek, startOfYear, endOfYear,
-  differenceInCalendarDays, differenceInCalendarMonths, 
-  isSameDay, isSameMonth, addDays, startOfMonth, endOfMonth,
-  subYears, addYears
+  format, addDays, startOfWeek, eachDayOfInterval, 
+  isSameDay, isSameMonth, startOfMonth, endOfMonth, 
+  startOfYear, endOfYear, eachMonthOfInterval, addMonths
 } from 'date-fns';
 import { it } from 'date-fns/locale';
+import interact from 'interactjs';
 
-export default function Gantt({ currentDate, setCurrentDate, viewMode, activities, onDateLongPress, onEditActivity, onUpdateActivity }) {
-  
-  const [screenWidth, setScreenWidth] = useState(window.innerWidth);
-  const containerRef = useRef(null);
-  const [anchorDate] = useState(new Date()); 
+export default function Gantt({ currentDate, viewMode, activities, onUpdateActivity, onEditActivity, onDateLongPress }) {
+  const scrollContainerRef = useRef(null);
 
-  const isDown = useRef(false);
-  const startX = useRef(0);
-  const scrollLeft = useRef(0);
-  const isScrollingRef = useRef(false); 
+  // --- LOGICA DI CALCOLO DATE (Ripristinata completa) ---
+  const { days, columnWidth, timeHeader } = useMemo(() => {
+    let start, end, daysInterval;
+    let colWidth = 60; // Default per mobile/settimana
 
-  // type: 'resize-start' | 'resize-end' | 'move'
-  const [interaction, setInteraction] = useState(null);
-
-  useEffect(() => {
-    const handleResize = () => setScreenWidth(window.innerWidth);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  const { columns, startDate } = useMemo(() => {
-    let start, end;
-    if (viewMode === 'year') {
-        start = startOfYear(subYears(anchorDate, 5));
-        end = endOfYear(addYears(anchorDate, 5));
-        return { columns: eachMonthOfInterval({ start, end }), startDate: start };
-    } else {
-        start = startOfMonth(subYears(anchorDate, 5));
-        end = endOfMonth(addYears(anchorDate, 5));
-        return { columns: eachDayOfInterval({ start, end }), startDate: start };
-    }
-  }, [viewMode, anchorDate]); 
-
-  const colWidth = useMemo(() => {
     if (viewMode === 'week') {
-      const padding = 20; 
-      return Math.max((screenWidth - padding) / 7, 50); 
+      start = startOfWeek(currentDate, { weekStartsOn: 1 });
+      end = addDays(start, 6);
+      colWidth = 100 / 7; 
+    } else if (viewMode === 'month') {
+      start = startOfMonth(currentDate);
+      end = endOfMonth(currentDate);
+      colWidth = 100 / (eachDayOfInterval({ start, end }).length);
+    } else {
+      start = startOfYear(currentDate);
+      end = endOfYear(currentDate);
+      // Per la vista anno mostriamo i mesi invece dei giorni per non esplodere
+      const months = eachMonthOfInterval({ start, end });
+      return { 
+        days: months, 
+        columnWidth: 100 / 12, 
+        timeHeader: months.map(m => ({ label: format(m, 'MMM', {locale: it}), sub: format(m, 'yyyy') })) 
+      };
     }
-    return viewMode === 'year' ? 80 : 56;
-  }, [viewMode, screenWidth]);
 
-  const isYearView = viewMode === 'year';
+    daysInterval = eachDayOfInterval({ start, end });
+    return {
+      days: daysInterval,
+      columnWidth: colWidth,
+      timeHeader: daysInterval.map(d => ({ 
+        label: format(d, 'EEE', {locale: it}), 
+        sub: format(d, 'd'),
+        isToday: isSameDay(d, new Date()),
+        fullDate: d
+      }))
+    };
+  }, [currentDate, viewMode]);
 
-  // --- LOGICA INTERAZIONE ---
+  // --- GESTIONE DRAG & DROP (MOBILE + DESKTOP) ---
   useEffect(() => {
-    const handleGlobalMouseMove = (e) => {
-      if (!interaction) return;
+    const interactable = interact('.draggable-task').draggable({
+      inertia: true,
+      autoScroll: true,
+      // Supporto Gesture: attiviamo il trascinamento solo dopo una piccola pressione su mobile
+      hold: 150, 
+      listeners: {
+        move(event) {
+          const target = event.target;
+          const x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
+          target.style.transform = `translateX(${x}px)`;
+          target.setAttribute('data-x', x);
+          target.style.zIndex = "100";
+        },
+        end(event) {
+          const target = event.target;
+          const x = parseFloat(target.getAttribute('data-x')) || 0;
+          
+          // Calcolo dello spostamento in base alla larghezza delle colonne
+          const containerWidth = scrollContainerRef.current.offsetWidth;
+          const dayWidth = containerWidth * (columnWidth / 100);
+          const daysMoved = Math.round(x / dayWidth);
 
-      const deltaX = e.pageX - interaction.startX;
-      const daysDelta = Math.round(deltaX / colWidth);
+          const activityId = target.getAttribute('data-id');
+          const activity = activities.find(a => String(a.id) === String(activityId));
 
-      if (daysDelta === 0) return;
-
-      const targetActivity = activities.find(a => a.id === interaction.id);
-      if (!targetActivity) return;
-
-      if (interaction.type === 'resize-start') {
-        const newStart = addDays(interaction.initialStart, daysDelta);
-        const newDays = interaction.initialDays - daysDelta;
-        if (newDays >= 1) {
-          onUpdateActivity({ ...targetActivity, start: newStart, days: newDays });
-        }
-      } 
-      else if (interaction.type === 'resize-end') {
-        const newDays = interaction.initialDays + daysDelta;
-        if (newDays >= 1) {
-          onUpdateActivity({ ...targetActivity, days: newDays });
-        }
-      }
-      else if (interaction.type === 'move') {
-        const newStart = addDays(interaction.initialStart, daysDelta);
-        onUpdateActivity({ ...targetActivity, start: newStart });
-      }
-    };
-
-    const handleGlobalMouseUp = (e) => {
-      if (interaction) {
-        if (interaction.type === 'move') {
-            const dist = Math.abs(e.pageX - interaction.startX);
-            if (dist < 5) {
-                onEditActivity(activities.find(a => a.id === interaction.id));
-            }
-        }
-        setInteraction(null);
-        document.body.style.cursor = 'default';
-      }
-    };
-
-    if (interaction) {
-      window.addEventListener('mousemove', handleGlobalMouseMove);
-      window.addEventListener('mouseup', handleGlobalMouseUp);
-      document.body.style.cursor = interaction.type.startsWith('resize') ? 'ew-resize' : 'grabbing';
-    }
-
-    return () => {
-      window.removeEventListener('mousemove', handleGlobalMouseMove);
-      window.removeEventListener('mouseup', handleGlobalMouseUp);
-      document.body.style.cursor = 'default';
-    };
-  }, [interaction, colWidth, onUpdateActivity, activities, onEditActivity]);
-
-  const handleScroll = () => {
-      if (!containerRef.current) return;
-      const centerScroll = containerRef.current.scrollLeft + (screenWidth / 2);
-      const centerIndex = Math.floor(centerScroll / colWidth);
-      if (columns[centerIndex]) {
-          const dateAtCenter = columns[centerIndex];
-          const shouldUpdate = isYearView 
-            ? format(dateAtCenter, 'yyyy') !== format(currentDate, 'yyyy')
-            : format(dateAtCenter, 'yyyy-MM') !== format(currentDate, 'yyyy-MM');
-          if (shouldUpdate) {
-             isScrollingRef.current = true;
-             setCurrentDate(dateAtCenter);
+          if (activity && daysMoved !== 0) {
+            const newStart = addDays(new Date(activity.start), daysMoved);
+            onUpdateActivity({ ...activity, start: newStart });
           }
-      }
-  };
 
-  useLayoutEffect(() => {
-    if (containerRef.current && !isScrollingRef.current) {
-        let offset;
-        if (isYearView) {
-            offset = differenceInCalendarMonths(currentDate, startDate) * colWidth;
-        } else {
-            offset = differenceInCalendarDays(currentDate, startDate) * colWidth;
+          // Reset temporaneo in attesa del re-render di React da Supabase
+          target.style.transform = 'none';
+          target.setAttribute('data-x', 0);
+          target.style.zIndex = "10";
         }
-        containerRef.current.scrollTo({
-            left: offset - (screenWidth / 2) + (colWidth / 2),
-            behavior: 'smooth' 
-        });
-    }
-    isScrollingRef.current = false;
-  }, [currentDate, viewMode, colWidth, startDate, screenWidth, isYearView]);
+      }
+    });
 
-  const onMouseDown = (e) => {
-    if (interaction) return; 
-    isDown.current = true;
-    containerRef.current.style.cursor = 'grabbing';
-    startX.current = e.pageX - containerRef.current.offsetLeft;
-    scrollLeft.current = containerRef.current.scrollLeft;
-    e.preventDefault(); 
-  };
-  const onMouseUp = () => { isDown.current = false; if (containerRef.current) containerRef.current.style.cursor = 'grab'; };
-  const onMouseLeave = () => { isDown.current = false; if (containerRef.current) containerRef.current.style.cursor = 'grab'; };
-  const onMouseMove = (e) => {
-    if (!isDown.current || interaction) return;
-    e.preventDefault();
-    const x = e.pageX - containerRef.current.offsetLeft;
-    const walk = (x - startX.current) * 1.5;
-    containerRef.current.scrollLeft = scrollLeft.current - walk;
-  };
-
-  const timerRef = useRef(null);
-  const handleStartPress = (date) => {
-    if (isDown.current || interaction) return;
-    timerRef.current = setTimeout(() => {
-      if (isDown.current || interaction) return;
-      if (navigator.vibrate) navigator.vibrate(50); 
-      onDateLongPress(date); 
-    }, 600);
-  };
-  const handleCancelPress = () => { if (timerRef.current) clearTimeout(timerRef.current); };
-
-  if (columns.length === 0) return null;
+    return () => interactable.unset();
+  }, [activities, columnWidth, viewMode, onUpdateActivity]);
 
   return (
-    <div 
-      ref={containerRef}
-      onScroll={handleScroll} 
-      onMouseDown={onMouseDown}
-      onMouseLeave={onMouseLeave}
-      onMouseUp={onMouseUp}
-      onMouseMove={onMouseMove}
-      className="flex-1 overflow-x-auto no-scrollbar relative cursor-grab mt-4 border-t transition-colors bg-white border-gray-300 dark:bg-black dark:border-zinc-700 select-none"
-    >
-      <div className="min-w-fit pb-40 pl-4" style={{ width: columns.length * colWidth }}> 
-        <div className="flex sticky top-0 z-40 pt-5 pb-3 border-b backdrop-blur-md transition-colors bg-white/95 border-gray-300 dark:bg-black/90 dark:border-zinc-700">
-          {columns.map((col, i) => {
-            const isCurrent = isYearView ? isSameMonth(col, new Date()) : isSameDay(col, new Date());
-            const isFirstOfMonth = !isYearView && col.getDate() === 1;
+    <div className="flex-1 overflow-hidden flex flex-col bg-white dark:bg-black select-none">
+      {/* HEADER TEMPORALE */}
+      <div className="flex border-b dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900/50 backdrop-blur-md">
+        {timeHeader.map((item, i) => (
+          <div 
+            key={i} 
+            style={{ width: `${columnWidth}%` }} 
+            className={`flex-shrink-0 py-3 border-r dark:border-zinc-800 text-center flex flex-col justify-center min-w-[40px] ${item.isToday ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}
+          >
+            <span className="text-[10px] font-black uppercase tracking-tighter text-gray-400 dark:text-zinc-500">
+              {item.label}
+            </span>
+            <span className={`text-sm font-bold ${item.isToday ? 'text-blue-500' : 'text-gray-700 dark:text-zinc-200'}`}>
+              {item.sub}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* AREA DEL DIAGRAMMA */}
+      <div className="flex-1 relative overflow-y-auto overflow-x-hidden touch-pan-y" ref={scrollContainerRef}>
+        
+        {/* GRIGLIA DI SFONDO */}
+        <div className="absolute inset-0 flex">
+          {days.map((_, i) => (
+            <div 
+              key={i} 
+              style={{ width: `${columnWidth}%` }} 
+              className="flex-shrink-0 border-r border-gray-100 dark:border-zinc-900/30 h-full"
+              onDoubleClick={() => onDateLongPress(days[i])}
+              // Gesture Mobile: Tocco lungo per creare attività
+              onTouchStart={(e) => {
+                const timer = setTimeout(() => onDateLongPress(days[i]), 700);
+                e.target.ontouchend = () => clearTimeout(timer);
+              }}
+            />
+          ))}
+        </div>
+
+        {/* ATTIVITÀ (BARRE) */}
+        <div className="relative min-h-full py-6">
+          {activities.map((activity, index) => {
+            const startOfView = days[0];
+            const endOfView = days[days.length - 1];
+            
+            // Calcolo posizione
+            if (activity.start > endOfView || addDays(activity.start, activity.days) < startOfView) return null;
+
+            const startIndex = days.findIndex(d => isSameDay(d, activity.start));
+            const leftPos = startIndex !== -1 ? startIndex * columnWidth : 0;
+            
+            // Gestione attività che iniziano prima della visualizzazione corrente
+            let displayDays = activity.days;
+            if (startIndex === -1) {
+                const diff = Math.ceil((startOfView - activity.start) / (1000 * 60 * 60 * 24));
+                displayDays = Math.max(0, activity.days - diff);
+            }
+
             return (
-              <div key={i} style={{ width: colWidth }} className="flex-none flex flex-col items-center justify-center group overflow-hidden pointer-events-none relative">
-                <span className={`text-sm font-bold transition-transform ${isCurrent ? 'scale-125 text-black dark:text-white' : 'text-gray-400 group-hover:text-gray-600 dark:text-zinc-500 dark:group-hover:text-zinc-300'}`}>{format(col, isYearView ? 'MMM' : 'd', {locale:it})}</span>
-                {!isYearView && (<span className="text-[9px] uppercase font-bold mt-1 tracking-wider text-gray-400 dark:text-zinc-600">{format(col, 'EEEEE', { locale: it })}</span>)}
-                {isFirstOfMonth && (<span className="absolute -top-3 left-1 text-[10px] font-bold text-black dark:text-white uppercase tracking-widest bg-white dark:bg-black px-1 rounded">{format(col, 'MMMM', {locale:it})}</span>)}
+              <div
+                key={activity.id}
+                data-id={activity.id}
+                onClick={() => onEditActivity(activity)}
+                className={`draggable-task absolute h-11 mb-2 rounded-2xl flex items-center px-4 shadow-sm border-2 border-white/10 cursor-pointer transition-shadow hover:shadow-lg active:scale-[0.98] touch-none ${activity.color}`}
+                style={{
+                  left: `${leftPos}%`,
+                  width: `${displayDays * columnWidth}%`,
+                  top: `${index * 56 + 20}px`,
+                  zIndex: 10,
+                }}
+              >
+                <div className="flex flex-col overflow-hidden">
+                  <span className="text-[11px] font-black truncate leading-tight uppercase tracking-tight">
+                    {activity.title}
+                  </span>
+                  {viewMode !== 'year' && (
+                    <span className="text-[9px] opacity-70 font-bold truncate">
+                      {activity.days} {activity.days === 1 ? 'giorno' : 'giorni'}
+                    </span>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
-        <div className="relative h-[800px] w-full mt-2">
-          <div className="absolute inset-0 flex">
-            {columns.map((col, i) => (
-              <div key={i} style={{ width: colWidth }} className={`flex-none border-r border-dashed h-full transition-colors ${!isYearView && col.getDate() === 1 ? 'border-gray-400 dark:border-zinc-500' : 'border-gray-200 dark:border-zinc-800'} active:bg-gray-50 dark:active:bg-zinc-900`} onMouseDown={() => handleStartPress(col)} onMouseUp={handleCancelPress} onTouchStart={() => handleStartPress(col)} onTouchEnd={handleCancelPress} />
-            ))}
+      </div>
+
+      {/* FOOTER STATISTICHE (Stile Apple) */}
+      <div className="p-3 border-t dark:border-zinc-800 bg-white dark:bg-black flex justify-between items-center px-6">
+          <div className="flex gap-4">
+            <div className="flex flex-col">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Attività</span>
+                <span className="text-sm font-black dark:text-white">{activities.length}</span>
+            </div>
+            <div className="flex flex-col">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Vista</span>
+                <span className="text-sm font-black dark:text-white capitalize">{viewMode}</span>
+            </div>
           </div>
-
-          <div className="absolute inset-0 pt-4 pointer-events-none">
-            {activities.map((activity, index) => {
-              let offsetCols, widthPx;
-              if (isYearView) {
-                offsetCols = differenceInCalendarMonths(activity.start, startDate);
-                const endDate = addDays(activity.start, activity.days);
-                const durationMonths = differenceInCalendarMonths(endDate, activity.start) + (activity.days % 30) / 30;
-                widthPx = Math.max(durationMonths * colWidth, 10);
-              } else {
-                offsetCols = differenceInCalendarDays(activity.start, startDate);
-                const paddingGap = viewMode === 'week' ? 10 : 6;
-                widthPx = Math.max(activity.days * colWidth - paddingGap, 10);
-              }
-
-              if (offsetCols < -50 || offsetCols > columns.length + 50) return null;
-
-              return (
-                <div
-                  key={activity.id}
-                  className={`pointer-events-auto absolute h-12 rounded-2xl flex items-center px-4 shadow-sm cursor-grab active:cursor-grabbing hover:brightness-110 transition-all z-10 border border-transparent dark:border-white/10 ${activity.color}`}
-                  onMouseDown={(e) => {
-                    e.stopPropagation(); 
-                    setInteraction({ 
-                        type: 'move',
-                        id: activity.id, 
-                        startX: e.pageX, 
-                        initialStart: activity.start,
-                        initialDays: activity.days
-                    });
-                  }}
-                  style={{ left: `${offsetCols * colWidth}px`, width: `${widthPx}px`, top: `${index * 60}px` }}
-                >
-                  
-                  {/* --- MANIGLIA SINISTRA --- */}
-                  <div 
-                    className="absolute left-0 top-0 bottom-0 w-6 cursor-ew-resize flex items-center justify-center group/handle z-20 hover:bg-black/5 dark:hover:bg-white/10 rounded-l-2xl"
-                    onMouseDown={(e) => {
-                        e.stopPropagation(); 
-                        setInteraction({ 
-                            type: 'resize-start',
-                            id: activity.id, 
-                            startX: e.pageX, 
-                            initialStart: activity.start,
-                            initialDays: activity.days
-                        });
-                    }}
-                  >
-                    {/* Indicatore: Usa bg-current per adattarsi al colore del testo (Nero su Chiaro, Bianco su Scuro) */}
-                    <div className="w-1.5 h-6 rounded-full bg-current opacity-30 group-hover/handle:opacity-100 transition-opacity shadow-sm"></div>
-                  </div>
-
-                  {/* TITOLO */}
-                  <span className="text-xs font-bold truncate drop-shadow-sm sticky left-2 select-none pl-2 flex-1 pointer-events-none">
-                    {activity.title}
-                  </span>
-
-                  {/* --- MANIGLIA DESTRA --- */}
-                  <div 
-                    className="absolute right-0 top-0 bottom-0 w-6 cursor-ew-resize flex items-center justify-center group/handle z-20 hover:bg-black/5 dark:hover:bg-white/10 rounded-r-2xl"
-                    onMouseDown={(e) => {
-                        e.stopPropagation(); 
-                        setInteraction({ 
-                            type: 'resize-end',
-                            id: activity.id, 
-                            startX: e.pageX, 
-                            initialStart: activity.start,
-                            initialDays: activity.days
-                        });
-                    }}
-                  >
-                    {/* Indicatore: Usa bg-current per contrasto perfetto */}
-                    <div className="w-1.5 h-6 rounded-full bg-current opacity-30 group-hover/handle:opacity-100 transition-opacity shadow-sm"></div>
-                  </div>
-
-                </div>
-              );
-            })}
+          <div className="text-[10px] font-bold text-blue-500 bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-full uppercase tracking-tighter">
+            Gestures Attive
           </div>
-        </div>
       </div>
     </div>
   );
