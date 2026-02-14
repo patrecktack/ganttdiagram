@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useMemo, useState } from 'react';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
 import { 
   format, addDays, startOfWeek, eachDayOfInterval, 
   isSameDay, startOfMonth, endOfMonth, 
@@ -10,11 +10,8 @@ import interact from 'interactjs';
 export default function Gantt({ currentDate, viewMode, activities, onUpdateActivity, onEditActivity, onDateLongPress, onNavigate }) {
   const mainScrollRef = useRef(null);
   const [touchStart, setTouchStart] = useState(null);
-  
-  // Memorizza la direzione dell'ultimo cambio mese
-  const lastNavDirection = useRef('next'); 
 
-  // --- 1. LOGICA CALCOLO DATE E HEADER ---
+  // --- 1. CALCOLO DATE ---
   const { days, timeHeader, totalDays } = useMemo(() => {
     let start, end, daysInterval;
 
@@ -47,7 +44,6 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
         }))
       };
     } else {
-      // Vista ANNO
       start = startOfYear(currentDate);
       end = endOfYear(currentDate);
       const months = eachMonthOfInterval({ start, end });
@@ -59,62 +55,43 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
     }
   }, [currentDate, viewMode]);
 
-  // --- 2. FIX SCATTO: USARE useLayoutEffect ---
-  // Questo viene eseguito PRIMA che il browser "dipinga" lo schermo.
-  // L'utente non vedrà mai lo scroll scattare, vedrà direttamente il risultato finale.
-  useLayoutEffect(() => {
+  // --- 2. RESET SCROLL (SEMPLICE E FUNZIONANTE) ---
+  // Ogni volta che cambia la data, riporta lo scroll a sinistra (0).
+  // Niente calcoli strani, niente salti alla fine.
+  useEffect(() => {
     if (mainScrollRef.current) {
-        // Disabilito momentaneamente lo scroll smooth per rendere il reset istantaneo
-        mainScrollRef.current.style.scrollBehavior = 'auto';
-
-        if (lastNavDirection.current === 'prev') {
-            // Se torno indietro, mi posiziono istantaneamente alla FINE
-            mainScrollRef.current.scrollLeft = mainScrollRef.current.scrollWidth;
-        } else {
-            // Se vado avanti, mi posiziono istantaneamente all'INIZIO
-            mainScrollRef.current.scrollLeft = 0;
-        }
-        
-        // Reset direzione default
-        lastNavDirection.current = 'next';
+        mainScrollRef.current.scrollLeft = 0;
     }
   }, [currentDate, viewMode]);
 
-  // --- 3. GESTIONE SWIPE PER CAMBIO MESE ---
-  const handleTouchStart = (e) => {
-      setTouchStart(e.targetTouches[0].clientX);
-  };
-
+  // --- 3. GESTIONE SWIPE ---
+  const handleTouchStart = (e) => setTouchStart(e.targetTouches[0].clientX);
+  
   const handleTouchEnd = (e) => {
       if (!touchStart) return;
-      
       const touchEnd = e.changedTouches[0].clientX;
       const diff = touchStart - touchEnd;
       const container = mainScrollRef.current;
       
+      // Calcolo se siamo a fine corsa
       const maxScrollLeft = container.scrollWidth - container.clientWidth;
-      
-      // Tolleranza bordi
-      const isNearEnd = container.scrollLeft >= (maxScrollLeft - 50);
-      const isNearStart = container.scrollLeft <= 50;
-      const swipeThreshold = 50; 
+      const isAtEnd = container.scrollLeft >= (maxScrollLeft - 20); // Tolleranza 20px
+      const isAtStart = container.scrollLeft <= 20;
 
-      if (Math.abs(diff) > swipeThreshold) {
-          // Swipe VERSO SINISTRA (Vado a Next)
-          if (diff > 0 && isNearEnd) {
-              lastNavDirection.current = 'next'; 
+      if (Math.abs(diff) > 50) { // Swipe deciso (>50px)
+          // Swipe verso SX (Next) -> Solo se sono a fine corsa
+          if (diff > 0 && isAtEnd) {
               if (onNavigate) onNavigate('next');
           } 
-          // Swipe VERSO DESTRA (Torno a Prev)
-          else if (diff < 0 && isNearStart) {
-              lastNavDirection.current = 'prev'; 
+          // Swipe verso DX (Prev) -> Solo se sono a inizio corsa
+          else if (diff < 0 && isAtStart) {
               if (onNavigate) onNavigate('prev');
           }
       }
       setTouchStart(null);
   };
 
-  // --- 4. CONFIGURAZIONE DRAG & DROP (INTERACT.JS) ---
+  // --- 4. DRAG & DROP ---
   useEffect(() => {
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
@@ -126,12 +103,7 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
         speed: 300
       },
       hold: isMobile ? 300 : 0, 
-      modifiers: [
-        interact.modifiers.restrictRect({
-          restriction: 'parent',
-          endOnly: true
-        })
-      ],
+      modifiers: [ interact.modifiers.restrictRect({ restriction: 'parent', endOnly: true }) ],
       listeners: {
         start(event) {
            event.target.style.opacity = '0.9';
@@ -149,6 +121,7 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
           const target = event.target;
           const x = parseFloat(target.getAttribute('data-x')) || 0;
           
+          // Misura precisa della colonna
           const dayColumn = mainScrollRef.current.querySelector('.day-column');
           const colWidthPx = dayColumn ? dayColumn.getBoundingClientRect().width : 1; 
           
@@ -185,14 +158,20 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
     >
-      <div className="flex flex-col h-full min-w-max sm:min-w-0 sm:w-full transition-all duration-300">
+      {/* WRAPPER: Qui sta la correzione per il desktop.
+          Invece di "w-full", usiamo "min-w-max". 
+          Questo costringe il contenitore a essere largo quanto la somma delle colonne (50px * 30 = 1500px).
+          Quindi scrollerà SEMPRE, anche su desktop.
+      */}
+      <div className="flex flex-col h-full min-w-max">
         
         {/* HEADER STICKY */}
         <div className="sticky top-0 z-40 flex border-b border-gray-200 dark:border-zinc-800 bg-gray-50/95 dark:bg-zinc-900/95 backdrop-blur-sm shadow-sm">
           {timeHeader.map((item, i) => (
             <div 
               key={i} 
-              className="flex-shrink-0 w-[45px] sm:w-auto sm:flex-1 py-3 border-r border-gray-200 dark:border-zinc-800/50 text-center flex flex-col justify-center min-w-[40px]"
+              // LARGHEZZA FISSA 50px PER TUTTI. Niente più adattamenti strani.
+              className="flex-shrink-0 w-[50px] py-3 border-r border-gray-200 dark:border-zinc-800/50 text-center flex flex-col justify-center"
             >
               <span className="text-[10px] font-black uppercase tracking-wider text-gray-400 dark:text-zinc-500">
                 {item.label}
@@ -204,15 +183,14 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
           ))}
         </div>
 
-        {/* AREA CONTENUTO */}
+        {/* AREA GRIGLIA */}
         <div className="relative flex-1 min-h-[500px]">
           
-          {/* GRIGLIA DI SFONDO */}
           <div className="absolute inset-0 flex h-full">
             {days.map((_, i) => (
               <div 
                 key={i} 
-                className="day-column flex-shrink-0 w-[45px] sm:w-auto sm:flex-1 border-r border-gray-100 dark:border-zinc-800 h-full hover:bg-gray-50 dark:hover:bg-zinc-900/50 transition-colors"
+                className="day-column flex-shrink-0 w-[50px] border-r border-gray-100 dark:border-zinc-800 h-full hover:bg-gray-50 dark:hover:bg-zinc-900/50 transition-colors"
                 onDoubleClick={() => onDateLongPress(days[i])}
                 onTouchStart={(e) => {
                     const timer = setTimeout(() => onDateLongPress(days[i]), 600);
@@ -226,8 +204,9 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
           {viewMode !== 'year' && days.some(d => isSameDay(d, new Date())) && (
               <div 
                   className="absolute top-0 bottom-0 border-l-2 border-blue-500 z-0 pointer-events-none opacity-50 dashed"
+                  // Calcolo fisso: indice * 50px + metà colonna (25px)
                   style={{ 
-                      left: `${(days.findIndex(d => isSameDay(d, new Date())) * (100 / totalDays)) + ((100 / totalDays)/2)}%` 
+                      left: `${(days.findIndex(d => isSameDay(d, new Date())) * 50) + 25}px` 
                   }}
               />
           )}
@@ -240,22 +219,23 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
               
               if (activity.start > endOfView || addDays(activity.start, activity.days) < startOfView) return null;
 
-              let startIndex, widthVal;
-              const colPercentage = 100 / totalDays;
+              // CALCOLI BASATI SUI 50PX FISSI
+              let startIndex;
+              let widthVal;
 
               if (viewMode === 'year') {
                   startIndex = days.findIndex(d => d.getMonth() === activity.start.getMonth() && d.getFullYear() === activity.start.getFullYear());
-                  widthVal = (activity.days / 30) * colPercentage; 
+                  widthVal = (activity.days / 30) * 50; 
               } else {
                   startIndex = days.findIndex(d => isSameDay(d, activity.start));
-                  widthVal = activity.days * colPercentage;
+                  widthVal = activity.days * 50;
               }
 
-              let leftPos = startIndex !== -1 ? startIndex * colPercentage : 0;
+              let leftPos = startIndex !== -1 ? startIndex * 50 : 0;
               
               if (startIndex === -1 && activity.start < startOfView) {
                   const diffDays = Math.ceil((startOfView - activity.start) / (1000 * 60 * 60 * 24));
-                  widthVal -= (diffDays * colPercentage);
+                  widthVal -= (diffDays * 50);
               }
               
               if (widthVal <= 0) return null;
@@ -267,8 +247,8 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
                   onClick={() => onEditActivity(activity)}
                   className={`draggable-task absolute h-10 mb-3 rounded-xl flex items-center px-3 shadow-sm border border-white/20 cursor-grab active:cursor-grabbing hover:brightness-110 transition-transform hover:scale-[1.01] touch-none ${activity.color}`}
                   style={{
-                    left: `${leftPos}%`,
-                    width: `${widthVal}%`,
+                    left: `${leftPos}px`, // Pixel, non percentuali
+                    width: `${widthVal}px`, // Pixel, non percentuali
                     top: `${index * 50 + 10}px`,
                     zIndex: 10,
                     minWidth: '20px'
