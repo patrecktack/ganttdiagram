@@ -60,10 +60,14 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
 
   // CONFIGURAZIONE GESTURE (INTERACT.JS)
   useEffect(() => {
+    // Rileva se siamo su mobile per decidere il comportamento
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
     const interactable = interact('.draggable-task').draggable({
       inertia: true,
       autoScroll: true,
-      hold: 150, // Ritardo per attivare il drag su mobile
+      // FIX DESKTOP: Se è mobile usa ritardo (per permettere lo scroll), se desktop è istantaneo (0)
+      hold: isMobile ? 300 : 0, 
       modifiers: [
         interact.modifiers.restrictRect({
           restriction: 'parent',
@@ -71,21 +75,36 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
         })
       ],
       listeners: {
+        start(event) {
+           // Feedback visivo immediato quando inizia il drag
+           event.target.style.opacity = '0.8';
+           event.target.style.zIndex = '100';
+           event.target.style.boxShadow = '0 10px 25px -5px rgba(0,0,0,0.5)';
+        },
         move(event) {
           const target = event.target;
+          // Accumula movimento
           const x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
+          
           target.style.transform = `translateX(${x}px)`;
           target.setAttribute('data-x', x);
-          target.style.zIndex = "50"; 
-          target.style.boxShadow = "0 10px 25px -5px rgba(0, 0, 0, 0.5)"; // Ombra più forte durante il trascinamento
         },
         end(event) {
           const target = event.target;
           const x = parseFloat(target.getAttribute('data-x')) || 0;
           
-          const containerWidth = scrollContainerRef.current.offsetWidth;
-          const pxPerUnit = containerWidth * (columnWidth / 100);
-          const unitsMoved = Math.round(x / pxPerUnit);
+          // --- FIX DATE SU MOBILE ---
+          // Usiamo scrollWidth (larghezza reale totale) e non offsetWidth (larghezza schermo)
+          const totalWidth = scrollContainerRef.current.scrollWidth;
+          const visibleDays = days.length;
+          
+          // Calcolo pixel per singolo giorno
+          // Se width è in %, dobbiamo calcolarlo in px: (TotalWidth / 100) * ColumnWidth%
+          // Oppure semplicemente: TotalWidth / NumeroGiorni
+          const pxPerDay = totalWidth / visibleDays;
+          
+          // Quanti giorni ho spostato?
+          const unitsMoved = Math.round(x / pxPerDay);
 
           const activityId = target.getAttribute('data-id');
           const activity = activities.find(a => String(a.id) === String(activityId));
@@ -93,7 +112,7 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
           if (activity && unitsMoved !== 0) {
             let newStart;
             if (viewMode === 'year') {
-                newStart = addDays(new Date(activity.start), unitsMoved * 30);
+                newStart = addDays(new Date(activity.start), unitsMoved * 30); // Approx mese
             } else {
                 newStart = addDays(new Date(activity.start), unitsMoved);
             }
@@ -104,28 +123,29 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
           target.style.transform = 'none';
           target.setAttribute('data-x', 0);
           target.style.zIndex = "10";
+          target.style.opacity = '1';
           target.style.boxShadow = "";
         }
       }
     });
 
     return () => interactable.unset();
-  }, [activities, columnWidth, viewMode, onUpdateActivity]);
+  }, [activities, columnWidth, viewMode, onUpdateActivity, days.length]);
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col select-none relative bg-white dark:bg-black">
       {/* HEADER DATE */}
-      <div className="flex border-b border-gray-200 dark:border-zinc-700 bg-gray-50/90 dark:bg-zinc-900/90 backdrop-blur-sm z-20">
+      <div className="flex border-b border-gray-200 dark:border-zinc-800 bg-gray-50/90 dark:bg-zinc-900/90 backdrop-blur-sm z-20">
         {timeHeader.map((item, i) => (
           <div 
             key={i} 
             style={{ width: `${columnWidth}%` }} 
-            className={`flex-shrink-0 py-3 border-r border-gray-200 dark:border-zinc-700 text-center flex flex-col justify-center min-w-[40px] ${item.isToday ? 'bg-blue-50/50 dark:bg-blue-900/20' : ''}`}
+            className={`flex-shrink-0 py-3 border-r border-gray-200 dark:border-zinc-800/50 text-center flex flex-col justify-center min-w-[40px] ${item.isToday ? 'bg-blue-50/50 dark:bg-blue-900/20' : ''}`}
           >
-            <span className="text-[10px] font-black uppercase tracking-wider text-gray-400 dark:text-zinc-400">
+            <span className="text-[10px] font-black uppercase tracking-wider text-gray-400 dark:text-zinc-500">
               {item.label}
             </span>
-            <span className={`text-sm font-bold mt-0.5 ${item.isToday ? 'text-blue-600 dark:text-blue-400 scale-110' : 'text-gray-700 dark:text-zinc-200'}`}>
+            <span className={`text-sm font-bold mt-0.5 ${item.isToday ? 'text-blue-600 dark:text-blue-400 scale-110' : 'text-gray-700 dark:text-zinc-300'}`}>
               {item.sub}
             </span>
           </div>
@@ -135,14 +155,13 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
       {/* AREA SCROLLABILE - GRIGLIA */}
       <div className="flex-1 relative overflow-y-auto overflow-x-hidden touch-pan-y" ref={scrollContainerRef}>
         
-        {/* GRIGLIA DI SFONDO (Righe verticali più visibili) */}
+        {/* GRIGLIA DI SFONDO */}
         <div className="absolute inset-0 flex h-full">
           {days.map((_, i) => (
             <div 
               key={i} 
               style={{ width: `${columnWidth}%` }} 
-              // QUI LA MODIFICA: dark:border-zinc-700 invece di 800/30 per maggiore visibilità
-              className="flex-shrink-0 border-r border-gray-200 dark:border-zinc-700 h-full hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors"
+              className="flex-shrink-0 border-r border-gray-200 dark:border-zinc-800 h-full hover:bg-gray-50 dark:hover:bg-zinc-900/50 transition-colors"
               onDoubleClick={() => onDateLongPress(days[i])}
               onTouchStart={(e) => {
                   const timer = setTimeout(() => onDateLongPress(days[i]), 600);
@@ -191,6 +210,7 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
                 key={activity.id}
                 data-id={activity.id}
                 onClick={() => onEditActivity(activity)}
+                // NOTA: touch-action: none impedisce al browser di scrollare mentre trascini
                 className={`draggable-task absolute h-10 mb-3 rounded-xl flex items-center px-3 shadow-sm border border-white/20 cursor-grab active:cursor-grabbing hover:brightness-110 transition-transform hover:scale-[1.01] touch-none ${activity.color}`}
                 style={{
                   left: `${leftPos}%`,
@@ -208,7 +228,6 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
           })}
         </div>
       </div>
-      {/* BARRA IN FONDO RIMOSSA COMPLETAMENTE */}
     </div>
   );
 }
