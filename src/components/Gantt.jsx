@@ -8,21 +8,20 @@ import { it } from 'date-fns/locale';
 import interact from 'interactjs';
 
 export default function Gantt({ currentDate, viewMode, activities, onUpdateActivity, onEditActivity, onDateLongPress }) {
-  const scrollContainerRef = useRef(null);
+  // Container principale per lo scroll (X e Y unificati)
+  const mainScrollRef = useRef(null);
 
-  // LOGICA DATE E COLONNE
-  const { days, columnWidth, timeHeader } = useMemo(() => {
+  // LOGICA DATE
+  const { days, timeHeader, totalDays } = useMemo(() => {
     let start, end, daysInterval;
-    let colWidth = 60; // Default
 
     if (viewMode === 'week') {
       start = startOfWeek(currentDate, { weekStartsOn: 1 });
       end = addDays(start, 6);
-      colWidth = 100 / 7; 
       daysInterval = eachDayOfInterval({ start, end });
       return {
         days: daysInterval,
-        columnWidth: colWidth,
+        totalDays: 7,
         timeHeader: daysInterval.map(d => ({ 
           label: format(d, 'EEE', {locale: it}), 
           sub: format(d, 'd'),
@@ -34,10 +33,9 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
       start = startOfMonth(currentDate);
       end = endOfMonth(currentDate);
       daysInterval = eachDayOfInterval({ start, end });
-      colWidth = 100 / daysInterval.length;
       return {
         days: daysInterval,
-        columnWidth: colWidth,
+        totalDays: daysInterval.length,
         timeHeader: daysInterval.map(d => ({ 
           label: format(d, 'EEE', {locale: it}), 
           sub: format(d, 'd'),
@@ -52,7 +50,7 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
       const months = eachMonthOfInterval({ start, end });
       return { 
         days: months, 
-        columnWidth: 100 / 12, 
+        totalDays: 12,
         timeHeader: months.map(m => ({ label: format(m, 'MMM', {locale: it}), sub: format(m, 'yyyy'), fullDate: m })) 
       };
     }
@@ -60,32 +58,31 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
 
   // CONFIGURAZIONE GESTURE (INTERACT.JS)
   useEffect(() => {
-    // Rileva se siamo su mobile per decidere il comportamento
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
     const interactable = interact('.draggable-task').draggable({
       inertia: true,
-      autoScroll: true,
-      // FIX DESKTOP: Se è mobile usa ritardo (per permettere lo scroll), se desktop è istantaneo (0)
+      autoScroll: {
+        container: mainScrollRef.current,
+        margin: 50,
+        speed: 300
+      },
       hold: isMobile ? 300 : 0, 
       modifiers: [
         interact.modifiers.restrictRect({
-          restriction: 'parent',
+          restriction: 'parent', // Restringe al contenitore scrollabile interno
           endOnly: true
         })
       ],
       listeners: {
         start(event) {
-           // Feedback visivo immediato quando inizia il drag
            event.target.style.opacity = '0.8';
            event.target.style.zIndex = '100';
            event.target.style.boxShadow = '0 10px 25px -5px rgba(0,0,0,0.5)';
         },
         move(event) {
           const target = event.target;
-          // Accumula movimento
           const x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
-          
           target.style.transform = `translateX(${x}px)`;
           target.setAttribute('data-x', x);
         },
@@ -93,18 +90,12 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
           const target = event.target;
           const x = parseFloat(target.getAttribute('data-x')) || 0;
           
-          // --- FIX DATE SU MOBILE ---
-          // Usiamo scrollWidth (larghezza reale totale) e non offsetWidth (larghezza schermo)
-          const totalWidth = scrollContainerRef.current.scrollWidth;
-          const visibleDays = days.length;
+          // --- CALCOLO SPOSTAMENTO BASATO SU PIXEL REALI ---
+          // Recuperiamo la larghezza di una singola colonna direttamente dal DOM per precisione assoluta
+          const dayColumn = mainScrollRef.current.querySelector('.day-column');
+          const colWidthPx = dayColumn ? dayColumn.offsetWidth : 50; // Fallback
           
-          // Calcolo pixel per singolo giorno
-          // Se width è in %, dobbiamo calcolarlo in px: (TotalWidth / 100) * ColumnWidth%
-          // Oppure semplicemente: TotalWidth / NumeroGiorni
-          const pxPerDay = totalWidth / visibleDays;
-          
-          // Quanti giorni ho spostato?
-          const unitsMoved = Math.round(x / pxPerDay);
+          const unitsMoved = Math.round(x / colWidthPx);
 
           const activityId = target.getAttribute('data-id');
           const activity = activities.find(a => String(a.id) === String(activityId));
@@ -112,7 +103,7 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
           if (activity && unitsMoved !== 0) {
             let newStart;
             if (viewMode === 'year') {
-                newStart = addDays(new Date(activity.start), unitsMoved * 30); // Approx mese
+                newStart = addDays(new Date(activity.start), unitsMoved * 30);
             } else {
                 newStart = addDays(new Date(activity.start), unitsMoved);
             }
@@ -130,102 +121,113 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
     });
 
     return () => interactable.unset();
-  }, [activities, columnWidth, viewMode, onUpdateActivity, days.length]);
+  }, [activities, viewMode, onUpdateActivity]);
+
+  // Calcolo larghezza minima contenitore per forzare lo scroll su mobile
+  // 50px minimo per colonna su mobile, altrimenti fit (100%)
+  const minWidthStyle = { minWidth: `${Math.max(100, totalDays * 12)}%` }; // Su mobile sarà tipo 300%
 
   return (
-    <div className="flex-1 overflow-hidden flex flex-col select-none relative bg-white dark:bg-black">
-      {/* HEADER DATE */}
-      <div className="flex border-b border-gray-200 dark:border-zinc-800 bg-gray-50/90 dark:bg-zinc-900/90 backdrop-blur-sm z-20">
-        {timeHeader.map((item, i) => (
-          <div 
-            key={i} 
-            style={{ width: `${columnWidth}%` }} 
-            className={`flex-shrink-0 py-3 border-r border-gray-200 dark:border-zinc-800/50 text-center flex flex-col justify-center min-w-[40px] ${item.isToday ? 'bg-blue-50/50 dark:bg-blue-900/20' : ''}`}
-          >
-            <span className="text-[10px] font-black uppercase tracking-wider text-gray-400 dark:text-zinc-500">
-              {item.label}
-            </span>
-            <span className={`text-sm font-bold mt-0.5 ${item.isToday ? 'text-blue-600 dark:text-blue-400 scale-110' : 'text-gray-700 dark:text-zinc-300'}`}>
-              {item.sub}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* AREA SCROLLABILE - GRIGLIA */}
-      <div className="flex-1 relative overflow-y-auto overflow-x-hidden touch-pan-y" ref={scrollContainerRef}>
+    <div className="flex-1 overflow-auto bg-white dark:bg-black select-none relative" ref={mainScrollRef}>
+      {/* WRAPPER CHE SI ESPANDE ORIZZONTALMENTE */}
+      <div className="flex flex-col h-full" style={minWidthStyle}>
         
-        {/* GRIGLIA DI SFONDO */}
-        <div className="absolute inset-0 flex h-full">
-          {days.map((_, i) => (
+        {/* HEADER STICKY (Resta in alto mentre scorri le attività) */}
+        <div className="sticky top-0 z-40 flex border-b border-gray-200 dark:border-zinc-800 bg-gray-50/95 dark:bg-zinc-900/95 backdrop-blur-sm shadow-sm">
+          {timeHeader.map((item, i) => (
             <div 
               key={i} 
-              style={{ width: `${columnWidth}%` }} 
-              className="flex-shrink-0 border-r border-gray-200 dark:border-zinc-800 h-full hover:bg-gray-50 dark:hover:bg-zinc-900/50 transition-colors"
-              onDoubleClick={() => onDateLongPress(days[i])}
-              onTouchStart={(e) => {
-                  const timer = setTimeout(() => onDateLongPress(days[i]), 600);
-                  e.target.ontouchend = () => clearTimeout(timer);
-              }}
-            />
+              // Larghezza dinamica basata sul numero di giorni (es. 1/30)
+              style={{ width: `${100 / totalDays}%` }}
+              className={`flex-shrink-0 py-3 border-r border-gray-200 dark:border-zinc-800/50 text-center flex flex-col justify-center min-w-[40px] ${item.isToday ? 'bg-blue-50/50 dark:bg-blue-900/20' : ''}`}
+            >
+              <span className="text-[10px] font-black uppercase tracking-wider text-gray-400 dark:text-zinc-500">
+                {item.label}
+              </span>
+              <span className={`text-sm font-bold mt-0.5 ${item.isToday ? 'text-blue-600 dark:text-blue-400 scale-110' : 'text-gray-700 dark:text-zinc-300'}`}>
+                {item.sub}
+              </span>
+            </div>
           ))}
         </div>
 
-        {/* LINEA GIORNO CORRENTE */}
-        {viewMode !== 'year' && days.some(d => isSameDay(d, new Date())) && (
-             <div 
-                className="absolute top-0 bottom-0 border-l-2 border-blue-500 z-0 pointer-events-none opacity-50 dashed"
-                style={{ 
-                    left: `${(days.findIndex(d => isSameDay(d, new Date())) * columnWidth) + (columnWidth/2)}%` 
+        {/* AREA GRIGLIA E ATTIVITÀ */}
+        <div className="relative flex-1 min-h-[500px]"> {/* min-h assicura scroll verticale se vuoto */}
+          
+          {/* GRIGLIA DI SFONDO */}
+          <div className="absolute inset-0 flex h-full">
+            {days.map((_, i) => (
+              <div 
+                key={i} 
+                style={{ width: `${100 / totalDays}%` }}
+                className="day-column flex-shrink-0 border-r border-gray-100 dark:border-zinc-800 h-full hover:bg-gray-50 dark:hover:bg-zinc-900/50 transition-colors"
+                onDoubleClick={() => onDateLongPress(days[i])}
+                onTouchStart={(e) => {
+                    const timer = setTimeout(() => onDateLongPress(days[i]), 600);
+                    e.target.ontouchend = () => clearTimeout(timer);
                 }}
-             />
-        )}
+              />
+            ))}
+          </div>
 
-        {/* ATTIVITÀ RENDERIZZATE */}
-        <div className="relative min-h-full py-6 pb-24">
-          {activities.map((activity, index) => {
-            const startOfView = days[0];
-            const endOfView = days[days.length - 1];
-            
-            if (activity.start > endOfView || addDays(activity.start, activity.days) < startOfView) return null;
+          {/* LINEA GIORNO CORRENTE */}
+          {viewMode !== 'year' && days.some(d => isSameDay(d, new Date())) && (
+              <div 
+                  className="absolute top-0 bottom-0 border-l-2 border-blue-500 z-0 pointer-events-none opacity-50 dashed"
+                  style={{ 
+                      left: `${(days.findIndex(d => isSameDay(d, new Date())) * (100 / totalDays)) + ((100 / totalDays)/2)}%` 
+                  }}
+              />
+          )}
 
-            let startIndex, widthVal;
-            if (viewMode === 'year') {
-                 startIndex = days.findIndex(d => d.getMonth() === activity.start.getMonth() && d.getFullYear() === activity.start.getFullYear());
-                 widthVal = (activity.days / 30) * columnWidth; 
-            } else {
-                 startIndex = days.findIndex(d => isSameDay(d, activity.start));
-                 widthVal = activity.days * columnWidth;
-            }
+          {/* ATTIVITÀ */}
+          <div className="relative pt-6 pb-24">
+            {activities.map((activity, index) => {
+              const startOfView = days[0];
+              const endOfView = days[days.length - 1];
+              
+              if (activity.start > endOfView || addDays(activity.start, activity.days) < startOfView) return null;
 
-            let leftPos = startIndex !== -1 ? startIndex * columnWidth : 0;
-            if (startIndex === -1 && activity.start < startOfView) {
-                 const diffDays = Math.ceil((startOfView - activity.start) / (1000 * 60 * 60 * 24));
-                 widthVal -= (diffDays * columnWidth);
-            }
-            if (widthVal <= 0) return null;
+              let startIndex, widthVal;
+              const colPercentage = 100 / totalDays;
 
-            return (
-              <div
-                key={activity.id}
-                data-id={activity.id}
-                onClick={() => onEditActivity(activity)}
-                // NOTA: touch-action: none impedisce al browser di scrollare mentre trascini
-                className={`draggable-task absolute h-10 mb-3 rounded-xl flex items-center px-3 shadow-sm border border-white/20 cursor-grab active:cursor-grabbing hover:brightness-110 transition-transform hover:scale-[1.01] touch-none ${activity.color}`}
-                style={{
-                  left: `${leftPos}%`,
-                  width: `${widthVal}%`,
-                  top: `${index * 50 + 10}px`,
-                  zIndex: 10,
-                  minWidth: '20px' 
-                }}
-              >
-                <span className="text-xs font-bold truncate text-white drop-shadow-md pointer-events-none select-none">
-                  {activity.title}
-                </span>
-              </div>
-            );
-          })}
+              if (viewMode === 'year') {
+                  startIndex = days.findIndex(d => d.getMonth() === activity.start.getMonth() && d.getFullYear() === activity.start.getFullYear());
+                  widthVal = (activity.days / 30) * colPercentage; 
+              } else {
+                  startIndex = days.findIndex(d => isSameDay(d, activity.start));
+                  widthVal = activity.days * colPercentage;
+              }
+
+              let leftPos = startIndex !== -1 ? startIndex * colPercentage : 0;
+              // Gestione attività che iniziano prima della vista
+              if (startIndex === -1 && activity.start < startOfView) {
+                  const diffDays = Math.ceil((startOfView - activity.start) / (1000 * 60 * 60 * 24));
+                  widthVal -= (diffDays * colPercentage);
+              }
+              if (widthVal <= 0) return null;
+
+              return (
+                <div
+                  key={activity.id}
+                  data-id={activity.id}
+                  onClick={() => onEditActivity(activity)}
+                  className={`draggable-task absolute h-10 mb-3 rounded-xl flex items-center px-3 shadow-sm border border-white/20 cursor-grab active:cursor-grabbing hover:brightness-110 transition-transform hover:scale-[1.01] touch-none ${activity.color}`}
+                  style={{
+                    left: `${leftPos}%`,
+                    width: `${widthVal}%`,
+                    top: `${index * 50 + 10}px`,
+                    zIndex: 10,
+                    minWidth: '20px' 
+                  }}
+                >
+                  <span className="text-xs font-bold truncate text-white drop-shadow-md pointer-events-none select-none">
+                    {activity.title}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
