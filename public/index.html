@@ -3,31 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="theme-color" content="#000000" />
-
     <title>Gantt Diagram</title>
-
-    <style>
-      /* Evita che trascinando il dito verso il basso si aggiorni la pagina (pull-to-refresh) */
-      body {
-        overscroll-behavior-y: contain;
-        margin: 0;
-        padding: 0;
-        background-color: #000000; /* Colore di sfondo per evitare flash bianchi */
-      }
-      
-      /* Impedisce la selezione del testo involontaria durante il drag & drop */
-      * {
-        -webkit-tap-highlight-color: transparent;
-        user-select: none;
-        -webkit-user-select: none;
-      }
-    </style>
   </head>
   <body>
     <div id="root"></div>

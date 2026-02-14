@@ -2,46 +2,38 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  body {
-    /* Transizione fluida dei colori quando cambi tema */
-    @apply transition-colors duration-500 ease-in-out antialiased;
-    /* Colori di default (Light Mode) -> Colori Dark Mode */
-    @apply bg-gray-50 text-slate-900 dark:bg-black dark:text-white;
-    overscroll-behavior: none;
-  }
-
-  .no-scrollbar::-webkit-scrollbar { display: none; }
-  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-}
-
 @layer components {
-  /* Input che cambia colore */
-  .input-theme {
-    @apply w-full bg-transparent border-b py-4 text-2xl font-bold outline-none transition-colors;
-    @apply border-gray-200 text-black placeholder:text-gray-300 focus:border-black;
-    @apply dark:border-zinc-800 dark:text-white dark:placeholder:text-zinc-700 dark:focus:border-white;
-  }
-
-  /* Modale/Card che cambia colore */
   .card-theme {
-    @apply bg-white border-white/20 shadow-2xl;
-    @apply dark:bg-[#1C1C1E] dark:border-white/10 dark:shadow-black;
+    @apply bg-white dark:bg-[#1C1C1E] border border-gray-100 dark:border-zinc-800;
   }
-  
-  /* Input dentro il modale */
   .modal-input {
-    @apply w-full rounded-2xl px-5 py-4 text-lg font-medium outline-none transition-all;
-    @apply bg-gray-100 text-black focus:bg-white border-2 border-transparent focus:border-black/5;
-    @apply dark:bg-black dark:text-white dark:focus:bg-black dark:border-zinc-700 dark:focus:border-white/30 dark:placeholder:text-zinc-600;
+    @apply w-full p-4 bg-gray-100 dark:bg-zinc-800 rounded-2xl border-none outline-none focus:ring-2 focus:ring-black dark:focus:ring-white dark:text-white font-bold transition-all;
   }
 }
 
+/* Animazioni */
 .animate-enter {
-  animation: enter 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: enter 0.3s ease-out;
+}
+@keyframes enter {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
 }
 
-@keyframes enter {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
+/* FIX MOBILE: Blocca rimbalzo elastico */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overscroll-behavior-y: none;
+  background-color: #000000;
+}
+
+/* Nasconde scrollbar */
+::-webkit-scrollbar {
+  width: 0px;
+  background: transparent;
+}
+
+.draggable-task {
+  touch-action: none;
+  user-select: none;
 }
