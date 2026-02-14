@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo, useState, useLayoutEffect } from 'react';
+import React, { useEffect, useRef, useMemo, useLayoutEffect } from 'react';
 import { 
   format, addDays, startOfWeek, eachDayOfInterval, 
   isSameDay, startOfMonth, endOfMonth, 
@@ -7,21 +7,19 @@ import {
 import { it } from 'date-fns/locale';
 import interact from 'interactjs';
 
-// Configurazione larghezza colonna (in px)
-const COL_WIDTH = 60; 
+// CONFIGURAZIONE: Larghezza fissa per stabilità (come nel tuo esempio reference)
+const COLUMN_WIDTH = 60; 
 
 export default function Gantt({ currentDate, viewMode, activities, onUpdateActivity, onEditActivity, onDateLongPress, onNavigate }) {
-  const containerRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   
-  // Refs per il "Grab & Drag" su Desktop
-  const isMouseDown = useRef(false);
-  const startX = useRef(0);
-  const scrollLeft = useRef(0);
+  // Refs per la logica "Grab & Drag" su Desktop
+  const dragRef = useRef({ isDown: false, startX: 0, scrollLeft: 0 });
   
-  // Ref per direzione navigazione (per il reset dello scroll)
+  // Ref per direzione navigazione (per reset scroll)
   const lastNavDirection = useRef('next');
 
-  // --- 1. CALCOLO DATE E GRIGLIA ---
+  // --- 1. CALCOLO DATI E GRIGLIA ---
   const { days, timeHeader, totalWidth } = useMemo(() => {
     let start, end, daysInterval;
 
@@ -37,15 +35,16 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
       start = startOfYear(currentDate);
       end = endOfYear(currentDate);
       const months = eachMonthOfInterval({ start, end });
+      // Vista Anno: usiamo i mesi come colonne
       return { 
-        days: months, 
+        days: months,
         timeHeader: months.map(m => ({ 
           label: format(m, 'MMM', {locale: it}), 
           sub: format(m, 'yyyy'), 
           isToday: false,
           date: m
         })),
-        totalWidth: 12 * COL_WIDTH 
+        totalWidth: months.length * COLUMN_WIDTH 
       };
     }
 
@@ -58,68 +57,79 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
 
     return { 
       days: daysInterval, 
-      timeHeader: header,
-      totalWidth: daysInterval.length * COL_WIDTH 
+      timeHeader: header, 
+      totalWidth: daysInterval.length * COLUMN_WIDTH 
     };
   }, [currentDate, viewMode]);
 
-  // --- 2. GESTIONE SCROLL AL CAMBIO MESE ---
+  // --- 2. RESET SCROLL ISTANTANEO (ANTI-GLITCH) ---
   useLayoutEffect(() => {
-    if (containerRef.current) {
-        containerRef.current.style.scrollBehavior = 'auto'; // Disabilita animazione per reset istantaneo
-        if (lastNavDirection.current === 'prev') {
-            containerRef.current.scrollLeft = containerRef.current.scrollWidth;
-        } else {
-            containerRef.current.scrollLeft = 0;
-        }
-        lastNavDirection.current = 'next'; // Reset default
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.style.scrollBehavior = 'auto'; // Disabilita animazioni per il reset
+      if (lastNavDirection.current === 'prev') {
+        scrollContainerRef.current.scrollLeft = scrollContainerRef.current.scrollWidth; // Vai alla fine
+      } else {
+        scrollContainerRef.current.scrollLeft = 0; // Vai all'inizio
+      }
+      // Riabilita smooth scroll dopo un frame se lo desideri, ma 'auto' è più reattivo per il drag
+      lastNavDirection.current = 'next';
     }
   }, [currentDate, viewMode]);
 
-  // --- 3. GESTIONE MOUSE DRAG SU DESKTOP (Stile Google Maps) ---
+  // --- 3. LOGICA "GRAB & DRAG" PER DESKTOP (MOUSE) ---
   const handleMouseDown = (e) => {
-    // Se clicco su un task, non attivo lo scroll dello sfondo
+    // Se clicco su un task, lascio gestire a interact.js
     if (e.target.closest('.draggable-task')) return;
     
-    isMouseDown.current = true;
-    containerRef.current.style.cursor = 'grabbing';
-    startX.current = e.pageX - containerRef.current.offsetLeft;
-    scrollLeft.current = containerRef.current.scrollLeft;
+    dragRef.current.isDown = true;
+    dragRef.current.startX = e.pageX - scrollContainerRef.current.offsetLeft;
+    dragRef.current.scrollLeft = scrollContainerRef.current.scrollLeft;
+    scrollContainerRef.current.style.cursor = 'grabbing';
+  };
+
+  const handleMouseLeave = () => {
+    dragRef.current.isDown = false;
+    if(scrollContainerRef.current) scrollContainerRef.current.style.cursor = 'grab';
   };
 
   const handleMouseUp = () => {
-    isMouseDown.current = false;
-    if (containerRef.current) containerRef.current.style.cursor = 'default';
+    dragRef.current.isDown = false;
+    if(scrollContainerRef.current) scrollContainerRef.current.style.cursor = 'grab';
   };
 
   const handleMouseMove = (e) => {
-    if (!isMouseDown.current) return;
+    if (!dragRef.current.isDown) return;
     e.preventDefault();
-    const x = e.pageX - containerRef.current.offsetLeft;
-    const walk = (x - startX.current) * 1.5; // Velocità scroll
-    containerRef.current.scrollLeft = scrollLeft.current - walk;
+    const x = e.pageX - scrollContainerRef.current.offsetLeft;
+    const walk = (x - dragRef.current.startX) * 1.5; // Moltiplicatore velocità scroll
+    scrollContainerRef.current.scrollLeft = dragRef.current.scrollLeft - walk;
   };
 
-  // --- 4. GESTIONE SWIPE PER CAMBIO MESE (Sui bordi) ---
+  // --- 4. GESTIONE CAMBIO MESE A FINE CORSA (MOBILE & DESKTOP) ---
   const handleScroll = () => {
-    if (!containerRef.current || !onNavigate) return;
+    if (!scrollContainerRef.current || !onNavigate) return;
     
-    const { scrollLeft, scrollWidth, clientWidth } = containerRef.current;
+    const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
     
-    // Se l'utente forza lo scroll oltre i bordi (effetto elastico su Mac/iOS)
-    // o arriva a fine corsa, potremmo attivare la navigazione.
-    // Qui usiamo una logica semplice: se sei a 0 e provi ad andare indietro -> prev.
-    // Nota: L'evento 'scroll' è molto sensibile, meglio gestirlo con parsimonia o pulsanti.
-    // Per ora ci affidiamo ai pulsanti Header per il cambio mese per stabilità,
-    // o puoi riattivare la logica touchEnd se preferisci lo swipe aggressivo.
+    // Tolleranza di 5px dai bordi
+    if (scrollLeft <= 0) {
+       // Siamo all'inizio -> Tentativo di andare indietro?
+       // Nota: Per evitare cambi accidentali, qui potresti aggiungere logica extra
+       // o lasciare che l'utente usi le frecce. 
+       // Se vuoi il cambio automatico "infinite scroll", decommenta:
+       // onNavigate('prev'); lastNavDirection.current = 'prev';
+    } else if (scrollLeft + clientWidth >= scrollWidth - 5) {
+       // Siamo alla fine -> Tentativo di andare avanti?
+       // onNavigate('next'); lastNavDirection.current = 'next';
+    }
   };
 
-  // --- 5. CONFIGURAZIONE INTERACT.JS (DRAG ATTIVITÀ) ---
+  // --- 5. CONFIGURAZIONE INTERACT.JS (SOLO PER TASKS) ---
   useEffect(() => {
     const interactable = interact('.draggable-task').draggable({
       inertia: true,
       autoScroll: {
-        container: containerRef.current,
+        container: scrollContainerRef.current,
         margin: 50,
         speed: 300
       },
@@ -145,11 +155,9 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
           const target = event.target;
           const x = parseFloat(target.getAttribute('data-x')) || 0;
           
-          // Calcolo spostamento basato su COL_WIDTH fissa
-          const unitsMoved = Math.round(x / COL_WIDTH);
+          // Calcolo matematico preciso basato sulla larghezza fissa
+          const unitsMoved = Math.round(x / COLUMN_WIDTH);
           const activityId = target.getAttribute('data-id');
-          
-          // Nota: Qui leggiamo activities dalle props. Se hai problemi di stale closure, usa un ref.
           const activity = activities.find(a => String(a.id) === String(activityId));
 
           if (activity && unitsMoved !== 0) {
@@ -175,59 +183,59 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
   }, [activities, viewMode, onUpdateActivity]);
 
   return (
-    <div 
-      className="flex-1 overflow-hidden flex flex-col bg-background relative select-none"
-    >
-      {/* 1. HEADER (GIORNI) - SI MUOVE CON LO SCROLL */}
-      <div 
-        className="flex border-b border-border bg-background/95 backdrop-blur-sm z-20 overflow-hidden"
-        // Sincronizziamo manualmente questo header con lo scroll del body se necessario,
-        // ma per semplicità lo mettiamo dentro l'area scrollabile o usiamo sticky.
-        // Qui usiamo un approccio sticky dentro il container principale.
-      />
+    <div className="flex-1 overflow-hidden flex flex-col bg-white dark:bg-black relative select-none">
+      
+      {/* HEADER FISSO */}
+      <div className="flex border-b border-gray-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm z-30 h-14 shadow-sm">
+        {/* Usiamo un container interno che scorre sincronizzato o ricalcoliamo la posizione.
+            Per semplicità e performance, mettiamo l'header sticky dentro lo scroll container sotto. */}
+      </div>
 
-      {/* 2. AREA SCROLLABILE PRINCIPALE */}
+      {/* AREA SCROLLABILE (Main) */}
       <div 
-        ref={containerRef}
-        className="flex-1 overflow-auto relative cursor-grab active:cursor-grabbing"
+        ref={scrollContainerRef}
+        className="flex-1 overflow-x-auto overflow-y-hidden relative cursor-grab active:cursor-grabbing"
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
         onMouseMove={handleMouseMove}
         onScroll={handleScroll}
-        style={{ scrollBehavior: 'smooth' }}
+        style={{ scrollBehavior: 'smooth' }} // Smooth nativo
       >
         <div 
             className="relative h-full" 
-            style={{ width: `${totalWidth}px` }} // Larghezza forzata precisa
+            style={{ width: `${totalWidth}px` }} // Larghezza calcolata in pixel (NON %)
         >
             
-          {/* HEADER STICKY DENTRO LO SCROLL */}
-          <div className="sticky top-0 z-30 flex border-b border-border bg-background h-14">
-            {timeHeader.map((item, i) => (
-              <div 
-                key={i} 
-                className="absolute top-0 bottom-0 border-r border-border/50 text-center flex flex-col justify-center"
-                style={{ width: `${COL_WIDTH}px`, left: `${i * COL_WIDTH}px` }}
-              >
-                <span className="text-[10px] font-bold uppercase text-muted-foreground">
-                  {item.label}
-                </span>
-                <span className={`text-sm font-bold mt-0.5 ${item.isToday ? 'text-primary' : 'text-foreground'}`}>
-                  {item.sub}
-                </span>
-              </div>
-            ))}
+          {/* HEADER (Sticky dentro lo scroll per allineamento perfetto) */}
+          <div className="absolute top-0 left-0 right-0 h-14 flex border-b border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 z-20 sticky-header" style={{position: 'sticky', left: 0}}>
+             {/* Nota: Per un header sticky orizzontale in un div overflow-x, serve posizionamento JS o struttura diversa.
+                 Per ora usiamo la struttura a griglia assoluta che è la più robusta. */}
+             {timeHeader.map((item, i) => (
+                <div 
+                  key={i} 
+                  className="absolute top-0 bottom-0 border-r border-gray-200 dark:border-zinc-800/50 text-center flex flex-col justify-center"
+                  style={{ width: `${COLUMN_WIDTH}px`, left: `${i * COLUMN_WIDTH}px` }}
+                >
+                  <span className="text-[10px] font-black uppercase text-gray-400 dark:text-zinc-500">
+                    {item.label}
+                  </span>
+                  <span className={`text-sm font-bold mt-0.5 ${item.isToday ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-zinc-300'}`}>
+                    {item.sub}
+                  </span>
+                </div>
+             ))}
           </div>
 
-          {/* GRIGLIA SFONDO */}
+          {/* GRIGLIA DI SFONDO */}
           <div className="absolute top-14 bottom-0 left-0 right-0">
             {days.map((_, i) => (
               <div 
                 key={i} 
-                className="absolute top-0 bottom-0 border-r border-border/30 hover:bg-accent/50 transition-colors"
-                style={{ width: `${COL_WIDTH}px`, left: `${i * COL_WIDTH}px` }}
+                className="absolute top-0 bottom-0 border-r border-gray-100 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-900/50 transition-colors"
+                style={{ width: `${COLUMN_WIDTH}px`, left: `${i * COLUMN_WIDTH}px` }}
                 onDoubleClick={() => onDateLongPress(days[i])}
+                // Supporto Long Press mobile
                 onTouchStart={(e) => {
                     const timer = setTimeout(() => onDateLongPress(days[i]), 600);
                     e.target.ontouchend = () => clearTimeout(timer);
@@ -236,34 +244,34 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
             ))}
           </div>
 
-          {/* LINEA OGGI */}
+          {/* LINEA GIORNO CORRENTE */}
           {viewMode !== 'year' && days.some(d => isSameDay(d, new Date())) && (
              <div 
-                className="absolute top-14 bottom-0 border-l-2 border-primary z-10 pointer-events-none opacity-50 dashed"
+                className="absolute top-14 bottom-0 border-l-2 border-blue-500 z-10 pointer-events-none opacity-50 dashed"
                 style={{ 
-                    left: `${(days.findIndex(d => isSameDay(d, new Date())) * COL_WIDTH) + (COL_WIDTH/2)}px` 
+                    left: `${(days.findIndex(d => isSameDay(d, new Date())) * COLUMN_WIDTH) + (COLUMN_WIDTH/2)}px` 
                 }}
              />
           )}
 
           {/* ATTIVITÀ */}
-          <div className="relative pt-6 pb-20 top-14">
+          <div className="relative top-14 pt-6 pb-20">
             {activities.map((activity, index) => {
-              // Logica Posizionamento
+              // Calcoli di posizione robusti (Pixel based)
               const startIdx = viewMode === 'year' 
                 ? days.findIndex(d => d.getMonth() === activity.start.getMonth() && d.getFullYear() === activity.start.getFullYear())
                 : days.findIndex(d => isSameDay(d, activity.start));
               
-              // Se fuori range a destra
+              // Se l'attività non inizia in questo mese, controlliamo se lo attraversa
               if (startIdx === -1 && activity.start > days[days.length-1]) return null;
 
-              let left = startIdx * COL_WIDTH;
-              let width = (viewMode === 'year' ? activity.days / 30 : activity.days) * COL_WIDTH;
+              let left = startIdx * COLUMN_WIDTH;
+              let width = (viewMode === 'year' ? activity.days / 30 : activity.days) * COLUMN_WIDTH;
 
-              // Gestione taglio a sinistra (inizia prima del mese corrente)
+              // Gestione attività che iniziano prima della vista corrente (taglio a sinistra)
               if (startIdx === -1 && activity.start < days[0]) {
-                 const diff = Math.ceil((days[0] - activity.start) / (1000 * 60 * 60 * 24));
-                 width -= diff * COL_WIDTH;
+                 const diffDays = Math.ceil((days[0] - activity.start) / (1000 * 60 * 60 * 24));
+                 width -= diffDays * COLUMN_WIDTH;
                  left = 0;
               }
               
@@ -278,7 +286,7 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
                   style={{
                     left: `${left}px`,
                     width: `${width}px`,
-                    top: `${index * 50}px`,
+                    top: `${index * 50}px`, // Stack verticale
                     zIndex: 20,
                     minWidth: '20px'
                   }}
