@@ -10,6 +10,9 @@ import interact from 'interactjs';
 export default function Gantt({ currentDate, viewMode, activities, onUpdateActivity, onEditActivity, onDateLongPress, onNavigate }) {
   const mainScrollRef = useRef(null);
   const [touchStart, setTouchStart] = useState(null);
+  
+  // Memorizza la direzione dell'ultimo cambio mese ('next' o 'prev')
+  const lastNavDirection = useRef('next'); 
 
   // --- 1. LOGICA CALCOLO DATE E HEADER ---
   const { days, timeHeader, totalDays } = useMemo(() => {
@@ -56,7 +59,23 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
     }
   }, [currentDate, viewMode]);
 
-  // --- 2. GESTIONE SWIPE PER CAMBIO MESE (FIX TOLLERANZA) ---
+  // --- 2. SCROLL DINAMICO INTELLIGENTE ---
+  useEffect(() => {
+    if (mainScrollRef.current) {
+        if (lastNavDirection.current === 'prev') {
+            // Se sono tornato indietro, mi metto alla FINE (Destra)
+            // Così sembra che ho appena finito il mese precedente
+            mainScrollRef.current.scrollLeft = mainScrollRef.current.scrollWidth;
+        } else {
+            // Se sono andato avanti (o default), mi metto all'INIZIO (Sinistra)
+            mainScrollRef.current.scrollLeft = 0;
+        }
+        // Reset a default per i cambi data manuali (es. dal calendario)
+        lastNavDirection.current = 'next';
+    }
+  }, [currentDate, viewMode]);
+
+  // --- 3. GESTIONE SWIPE PER CAMBIO MESE ---
   const handleTouchStart = (e) => {
       setTouchStart(e.targetTouches[0].clientX);
   };
@@ -65,34 +84,32 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
       if (!touchStart) return;
       
       const touchEnd = e.changedTouches[0].clientX;
-      const diff = touchStart - touchEnd; // > 0 swipo a sinistra (avanti), < 0 swipo a destra (indietro)
+      const diff = touchStart - touchEnd;
       const container = mainScrollRef.current;
       
-      // Calcolo quanto spazio scrollabile c'è
       const maxScrollLeft = container.scrollWidth - container.clientWidth;
       
-      // Definisco una "Zona di Cambio Mese" di 50px dai bordi
-      // Se sei negli ultimi 50px e trascini ancora -> CAMBIA
+      // Tolleranza per capire se sono ai bordi
       const isNearEnd = container.scrollLeft >= (maxScrollLeft - 50);
       const isNearStart = container.scrollLeft <= 50;
-
-      // Soglia minima di trascinamento (swipe deciso)
       const swipeThreshold = 50; 
 
       if (Math.abs(diff) > swipeThreshold) {
-          // Swipe VERSO SINISTRA (Voglio andare a Next)
+          // Swipe VERSO SINISTRA (Vado a Next)
           if (diff > 0 && isNearEnd) {
+              lastNavDirection.current = 'next'; // Segno la direzione
               if (onNavigate) onNavigate('next');
           } 
-          // Swipe VERSO DESTRA (Voglio tornare a Prev)
+          // Swipe VERSO DESTRA (Torno a Prev)
           else if (diff < 0 && isNearStart) {
+              lastNavDirection.current = 'prev'; // Segno la direzione
               if (onNavigate) onNavigate('prev');
           }
       }
       setTouchStart(null);
   };
 
-  // --- 3. CONFIGURAZIONE DRAG & DROP (INTERACT.JS) ---
+  // --- 4. CONFIGURAZIONE DRAG & DROP (INTERACT.JS) ---
   useEffect(() => {
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
@@ -103,7 +120,6 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
         margin: 50,
         speed: 300
       },
-      // Su mobile serve pressione lunga (300ms) per non confondersi con lo scroll
       hold: isMobile ? 300 : 0, 
       modifiers: [
         interact.modifiers.restrictRect({
@@ -159,12 +175,11 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
 
   return (
     <div 
-        className="flex-1 overflow-auto bg-white dark:bg-black select-none relative touch-pan-x" // touch-pan-x aiuta lo scroll nativo
+        className="flex-1 overflow-auto bg-white dark:bg-black select-none relative touch-pan-x" 
         ref={mainScrollRef}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
     >
-      {/* WRAPPER PRINCIPALE: Mobile (min-w-max) vs Desktop (flex) */}
       <div className="flex flex-col h-full min-w-max sm:min-w-0 sm:w-full transition-all duration-300">
         
         {/* HEADER STICKY */}
@@ -172,7 +187,6 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
           {timeHeader.map((item, i) => (
             <div 
               key={i} 
-              // Larghezza: 45px Mobile, Auto Desktop
               className="flex-shrink-0 w-[45px] sm:w-auto sm:flex-1 py-3 border-r border-gray-200 dark:border-zinc-800/50 text-center flex flex-col justify-center min-w-[40px]"
             >
               <span className="text-[10px] font-black uppercase tracking-wider text-gray-400 dark:text-zinc-500">
