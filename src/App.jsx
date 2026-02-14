@@ -162,15 +162,10 @@ export default function App() {
   const handleDeleteAccountReal = async () => {
     setLoadingSettings(true);
     await supabase.from('activities').delete().eq('user_id', session.user.id);
-    // Nota: la cancellazione dell'utente auth richiede una funzione RPC su Supabase o si limita ai dati
-    // Se non hai la funzione rpc 'delete_user', questo passaggio potrebbe fallire, ma i dati verranno cancellati.
-    const { error } = await supabase.rpc('delete_user'); 
-    
+    const { error } = await supabase.rpc('delete_user');
     setLoadingSettings(false);
     setIsDeleteAccountConfirmOpen(false);
-    
     if (error) {
-      // Fallback: se RPC non c'è, fa logout. L'utente è "cancellato" logicamente (dati persi)
       await supabase.auth.signOut();
     } else {
       await supabase.auth.signOut();
@@ -293,7 +288,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* COMPONENTE GANTT (Aggiornato con gesture) */}
+      {/* GANTT: ORA PASSIAMO onNavigate PER LE GESTURE */}
       <Gantt 
         currentDate={currentDate} 
         setCurrentDate={setCurrentDate} 
@@ -302,11 +297,12 @@ export default function App() {
         onUpdateActivity={handleUpdateActivityDrag}
         onEditActivity={openEditModal} 
         onDateLongPress={openNewModal} 
+        onNavigate={handleNavigate} // <--- NUOVA PROP AGGIUNTA
       />
 
       <button onClick={() => openNewModal(new Date())} className="fixed bottom-8 right-8 w-16 h-16 rounded-full shadow-2xl flex items-center justify-center hover:scale-105 active:scale-90 transition-all z-50 bg-black text-white dark:bg-white dark:text-black dark:shadow-[0_0_40px_rgba(255,255,255,0.2)]"><Plus size={32} /></button>
 
-      {/* MODAL ATTIVITÀ (CREA/MODIFICA) */}
+      {/* MODAL VARI - CODICE INVARIATO */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center p-4">
           <div className="absolute inset-0 backdrop-blur-md bg-black/20 dark:bg-black/60" onClick={() => setIsModalOpen(false)} />
@@ -388,7 +384,6 @@ export default function App() {
         </div>
       )}
 
-      {/* --- ALERT CONFERMA CANCELLAZIONE --- */}
       {isDeleteAccountConfirmOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div className="absolute inset-0 backdrop-blur-md bg-black/50" onClick={() => setIsDeleteAccountConfirmOpen(false)} />
@@ -398,9 +393,7 @@ export default function App() {
              </div>
              <div>
                <h3 className="text-lg font-bold dark:text-white">Sei davvero sicuro?</h3>
-               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                 Stai per cancellare tutto il tuo account. Non potrai più tornare indietro.
-               </p>
+               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Stai per cancellare tutto il tuo account.</p>
              </div>
              <div className="grid grid-cols-2 gap-3 pt-2">
                <button onClick={() => setIsDeleteAccountConfirmOpen(false)} className="py-3 rounded-xl font-bold bg-gray-100 dark:bg-zinc-800 text-black dark:text-white">Annulla</button>
@@ -410,7 +403,6 @@ export default function App() {
         </div>
       )}
 
-      {/* --- ALERT GENERICO --- */}
       {customAlert && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className="absolute inset-0 backdrop-blur-md bg-black/20" onClick={() => setCustomAlert(null)} />
@@ -420,17 +412,12 @@ export default function App() {
              </div>
              <div>
                <h3 className="text-lg font-bold dark:text-white">{customAlert.title}</h3>
-               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
-                 {customAlert.message}
-               </p>
+               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">{customAlert.message}</p>
              </div>
-             <button onClick={() => setCustomAlert(null)} className="w-full py-3 rounded-xl font-bold bg-black text-white dark:bg-white dark:text-black shadow-xl">
-               Ho capito
-             </button>
+             <button onClick={() => setCustomAlert(null)} className="w-full py-3 rounded-xl font-bold bg-black text-white dark:bg-white dark:text-black shadow-xl">Ho capito</button>
           </div>
         </div>
       )}
-
     </div>
   );
 }
