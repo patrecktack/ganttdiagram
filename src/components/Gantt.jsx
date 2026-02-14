@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useMemo, useState } from 'react';
 import { 
   format, addDays, startOfWeek, eachDayOfInterval, 
   isSameDay, startOfMonth, endOfMonth, 
@@ -11,7 +11,7 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
   const mainScrollRef = useRef(null);
   const [touchStart, setTouchStart] = useState(null);
   
-  // Memorizza la direzione dell'ultimo cambio mese ('next' o 'prev')
+  // Memorizza la direzione dell'ultimo cambio mese
   const lastNavDirection = useRef('next'); 
 
   // --- 1. LOGICA CALCOLO DATE E HEADER ---
@@ -59,18 +59,23 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
     }
   }, [currentDate, viewMode]);
 
-  // --- 2. SCROLL DINAMICO INTELLIGENTE ---
-  useEffect(() => {
+  // --- 2. FIX SCATTO: USARE useLayoutEffect ---
+  // Questo viene eseguito PRIMA che il browser "dipinga" lo schermo.
+  // L'utente non vedrà mai lo scroll scattare, vedrà direttamente il risultato finale.
+  useLayoutEffect(() => {
     if (mainScrollRef.current) {
+        // Disabilito momentaneamente lo scroll smooth per rendere il reset istantaneo
+        mainScrollRef.current.style.scrollBehavior = 'auto';
+
         if (lastNavDirection.current === 'prev') {
-            // Se sono tornato indietro, mi metto alla FINE (Destra)
-            // Così sembra che ho appena finito il mese precedente
+            // Se torno indietro, mi posiziono istantaneamente alla FINE
             mainScrollRef.current.scrollLeft = mainScrollRef.current.scrollWidth;
         } else {
-            // Se sono andato avanti (o default), mi metto all'INIZIO (Sinistra)
+            // Se vado avanti, mi posiziono istantaneamente all'INIZIO
             mainScrollRef.current.scrollLeft = 0;
         }
-        // Reset a default per i cambi data manuali (es. dal calendario)
+        
+        // Reset direzione default
         lastNavDirection.current = 'next';
     }
   }, [currentDate, viewMode]);
@@ -89,7 +94,7 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
       
       const maxScrollLeft = container.scrollWidth - container.clientWidth;
       
-      // Tolleranza per capire se sono ai bordi
+      // Tolleranza bordi
       const isNearEnd = container.scrollLeft >= (maxScrollLeft - 50);
       const isNearStart = container.scrollLeft <= 50;
       const swipeThreshold = 50; 
@@ -97,12 +102,12 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
       if (Math.abs(diff) > swipeThreshold) {
           // Swipe VERSO SINISTRA (Vado a Next)
           if (diff > 0 && isNearEnd) {
-              lastNavDirection.current = 'next'; // Segno la direzione
+              lastNavDirection.current = 'next'; 
               if (onNavigate) onNavigate('next');
           } 
           // Swipe VERSO DESTRA (Torno a Prev)
           else if (diff < 0 && isNearStart) {
-              lastNavDirection.current = 'prev'; // Segno la direzione
+              lastNavDirection.current = 'prev'; 
               if (onNavigate) onNavigate('prev');
           }
       }
