@@ -8,7 +8,6 @@ import { it } from 'date-fns/locale';
 import interact from 'interactjs';
 
 export default function Gantt({ currentDate, viewMode, activities, onUpdateActivity, onEditActivity, onDateLongPress }) {
-  // Container principale per lo scroll (X e Y unificati)
   const mainScrollRef = useRef(null);
 
   // LOGICA DATE
@@ -70,7 +69,7 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
       hold: isMobile ? 300 : 0, 
       modifiers: [
         interact.modifiers.restrictRect({
-          restriction: 'parent', // Restringe al contenitore scrollabile interno
+          restriction: 'parent',
           endOnly: true
         })
       ],
@@ -90,10 +89,10 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
           const target = event.target;
           const x = parseFloat(target.getAttribute('data-x')) || 0;
           
-          // --- CALCOLO SPOSTAMENTO BASATO SU PIXEL REALI ---
-          // Recuperiamo la larghezza di una singola colonna direttamente dal DOM per precisione assoluta
+          // --- CALCOLO UNIVERSALE (Funziona sia Mobile che Desktop) ---
+          // Misuriamo quanto è larga UNA colonna in questo momento esatto nel browser
           const dayColumn = mainScrollRef.current.querySelector('.day-column');
-          const colWidthPx = dayColumn ? dayColumn.offsetWidth : 50; // Fallback
+          const colWidthPx = dayColumn ? dayColumn.getBoundingClientRect().width : 1; 
           
           const unitsMoved = Math.round(x / colWidthPx);
 
@@ -123,23 +122,23 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
     return () => interactable.unset();
   }, [activities, viewMode, onUpdateActivity]);
 
-  // Calcolo larghezza minima contenitore per forzare lo scroll su mobile
-  // 50px minimo per colonna su mobile, altrimenti fit (100%)
-  const minWidthStyle = { minWidth: `${Math.max(100, totalDays * 12)}%` }; // Su mobile sarà tipo 300%
-
   return (
     <div className="flex-1 overflow-auto bg-white dark:bg-black select-none relative" ref={mainScrollRef}>
-      {/* WRAPPER CHE SI ESPANDE ORIZZONTALMENTE */}
-      <div className="flex flex-col h-full" style={minWidthStyle}>
+      
+      {/* WRAPPER IBRIDO:
+         - Mobile: min-w-max (si allarga quanto serve, attiva lo scroll)
+         - Desktop (sm): min-w-0 w-full (si costringe a stare nel 100% dello schermo)
+      */}
+      <div className="flex flex-col h-full min-w-max sm:min-w-0 sm:w-full transition-all duration-300">
         
-        {/* HEADER STICKY (Resta in alto mentre scorri le attività) */}
+        {/* HEADER STICKY */}
         <div className="sticky top-0 z-40 flex border-b border-gray-200 dark:border-zinc-800 bg-gray-50/95 dark:bg-zinc-900/95 backdrop-blur-sm shadow-sm">
           {timeHeader.map((item, i) => (
             <div 
               key={i} 
-              // Larghezza dinamica basata sul numero di giorni (es. 1/30)
-              style={{ width: `${100 / totalDays}%` }}
-              className={`flex-shrink-0 py-3 border-r border-gray-200 dark:border-zinc-800/50 text-center flex flex-col justify-center min-w-[40px] ${item.isToday ? 'bg-blue-50/50 dark:bg-blue-900/20' : ''}`}
+              // Mobile: Larghezza fissa (45px) per leggibilità
+              // Desktop (sm): Larghezza flessibile (100% / giorni)
+              className="flex-shrink-0 w-[45px] sm:w-auto sm:flex-1 py-3 border-r border-gray-200 dark:border-zinc-800/50 text-center flex flex-col justify-center"
             >
               <span className="text-[10px] font-black uppercase tracking-wider text-gray-400 dark:text-zinc-500">
                 {item.label}
@@ -152,15 +151,15 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
         </div>
 
         {/* AREA GRIGLIA E ATTIVITÀ */}
-        <div className="relative flex-1 min-h-[500px]"> {/* min-h assicura scroll verticale se vuoto */}
+        <div className="relative flex-1 min-h-[500px]">
           
           {/* GRIGLIA DI SFONDO */}
           <div className="absolute inset-0 flex h-full">
             {days.map((_, i) => (
               <div 
-                key={i} 
-                style={{ width: `${100 / totalDays}%` }}
-                className="day-column flex-shrink-0 border-r border-gray-100 dark:border-zinc-800 h-full hover:bg-gray-50 dark:hover:bg-zinc-900/50 transition-colors"
+                key={i}
+                // STESSO COMPORTAMENTO HEADER: Fisso su mobile, Flex su desktop
+                className="day-column flex-shrink-0 w-[45px] sm:w-auto sm:flex-1 border-r border-gray-100 dark:border-zinc-800 h-full hover:bg-gray-50 dark:hover:bg-zinc-900/50 transition-colors"
                 onDoubleClick={() => onDateLongPress(days[i])}
                 onTouchStart={(e) => {
                     const timer = setTimeout(() => onDateLongPress(days[i]), 600);
@@ -174,6 +173,8 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
           {viewMode !== 'year' && days.some(d => isSameDay(d, new Date())) && (
               <div 
                   className="absolute top-0 bottom-0 border-l-2 border-blue-500 z-0 pointer-events-none opacity-50 dashed"
+                  // Calcolo posizione: (Indice * 100 / Totale)% funziona perfettamente per il layout Flex desktop
+                  // Per mobile dobbiamo usare calc() ma la percentuale funziona bene se il genitore ha larghezza fissa
                   style={{ 
                       left: `${(days.findIndex(d => isSameDay(d, new Date())) * (100 / totalDays)) + ((100 / totalDays)/2)}%` 
                   }}
@@ -189,6 +190,7 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
               if (activity.start > endOfView || addDays(activity.start, activity.days) < startOfView) return null;
 
               let startIndex, widthVal;
+              // Usiamo percentuali: funzionano sia se il container è 3000px (mobile) che 1000px (desktop)
               const colPercentage = 100 / totalDays;
 
               if (viewMode === 'year') {
@@ -200,7 +202,7 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
               }
 
               let leftPos = startIndex !== -1 ? startIndex * colPercentage : 0;
-              // Gestione attività che iniziano prima della vista
+              
               if (startIndex === -1 && activity.start < startOfView) {
                   const diffDays = Math.ceil((startOfView - activity.start) / (1000 * 60 * 60 * 24));
                   widthVal -= (diffDays * colPercentage);
