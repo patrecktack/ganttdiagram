@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, ChevronLeft, ChevronRight, X, LogOut, Moon, Sun, Calendar, Trash2, Settings, User, Lock, Mail, AlertTriangle, AlertCircle, CheckCircle } from 'lucide-react';
+import { 
+  Plus, ChevronLeft, ChevronRight, X, LogOut, Moon, Sun, 
+  Calendar, Trash2, Settings, User, Lock, Mail, AlertTriangle, 
+  AlertCircle, CheckCircle 
+} from 'lucide-react';
 import { 
   format, addDays, addWeeks, addMonths, addYears, 
   differenceInCalendarDays, startOfDay, 
@@ -288,21 +292,23 @@ export default function App() {
         </div>
       </header>
 
-      {/* GANTT: ORA PASSIAMO onNavigate PER LE GESTURE */}
-      <Gantt 
-        currentDate={currentDate} 
-        setCurrentDate={setCurrentDate} 
-        viewMode={viewMode} 
-        activities={activities} 
-        onUpdateActivity={handleUpdateActivityDrag}
-        onEditActivity={openEditModal} 
-        onDateLongPress={openNewModal} 
-        onNavigate={handleNavigate} // <--- NUOVA PROP AGGIUNTA
-      />
+      {/* GANTT: FIX SCHERMO NERO - WRAPPER FONDAMENTALE */}
+      <div className="flex-1 overflow-hidden relative">
+          <Gantt 
+            currentDate={currentDate} 
+            setCurrentDate={setCurrentDate} 
+            viewMode={viewMode} 
+            activities={activities} 
+            onUpdateActivity={handleUpdateActivityDrag}
+            onEditActivity={openEditModal} 
+            onDateLongPress={openNewModal} 
+            onNavigate={handleNavigate}
+          />
+      </div>
 
       <button onClick={() => openNewModal(new Date())} className="fixed bottom-8 right-8 w-16 h-16 rounded-full shadow-2xl flex items-center justify-center hover:scale-105 active:scale-90 transition-all z-50 bg-black text-white dark:bg-white dark:text-black dark:shadow-[0_0_40px_rgba(255,255,255,0.2)]"><Plus size={32} /></button>
 
-      {/* MODAL VARI - CODICE INVARIATO */}
+      {/* MODAL VARI */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center p-4">
           <div className="absolute inset-0 backdrop-blur-md bg-black/20 dark:bg-black/60" onClick={() => setIsModalOpen(false)} />

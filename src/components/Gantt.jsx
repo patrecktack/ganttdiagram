@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo, useLayoutEffect } from 'react';
+import React, { useEffect, useRef, useMemo, useLayoutEffect, useState } from 'react';
 import { 
   format, addDays, startOfWeek, eachDayOfInterval, 
   isSameDay, startOfMonth, endOfMonth, 
@@ -7,31 +7,34 @@ import {
 import { it } from 'date-fns/locale';
 import interact from 'interactjs';
 
-// LARGHEZZA COLONNA FISSA (Stabilità massima)
+// LARGHEZZA COLONNA FISSA (Per stabilità e niente glitch)
 const COLUMN_WIDTH = 60; 
 
-export default function Gantt({ currentDate, viewMode, activities, onUpdateActivity, onEditActivity, onDateLongPress, onNavigate }) {
+export default function Gantt({ currentDate = new Date(), viewMode = 'month', activities = [], onUpdateActivity, onEditActivity, onDateLongPress, onNavigate }) {
   const containerRef = useRef(null);
   
-  // Refs per il "Grab & Drag"
+  // Refs per il Grab & Drag
   const dragRef = useRef({ isDown: false, startX: 0, scrollLeft: 0 });
   const lastNavDirection = useRef('next');
 
-  // --- 1. CALCOLO GRIGLIA E DATE ---
+  // --- 1. CALCOLO GRIGLIA ---
   const { days, timeHeader, totalWidth } = useMemo(() => {
     let start, end, daysInterval;
+    // Protezione contro date nulle
+    const safeDate = currentDate || new Date();
 
     if (viewMode === 'week') {
-      start = startOfWeek(currentDate, { weekStartsOn: 1 });
+      start = startOfWeek(safeDate, { weekStartsOn: 1 });
       end = addDays(start, 6);
       daysInterval = eachDayOfInterval({ start, end });
     } else if (viewMode === 'month') {
-      start = startOfMonth(currentDate);
-      end = endOfMonth(currentDate);
+      start = startOfMonth(safeDate);
+      end = endOfMonth(safeDate);
       daysInterval = eachDayOfInterval({ start, end });
     } else {
-      start = startOfYear(currentDate);
-      end = endOfYear(currentDate);
+      // Vista Anno
+      start = startOfYear(safeDate);
+      end = endOfYear(safeDate);
       const months = eachMonthOfInterval({ start, end });
       return { 
         days: months,
@@ -59,23 +62,22 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
     };
   }, [currentDate, viewMode]);
 
-  // --- 2. RESET SCROLL ISTANTANEO ---
+  // --- 2. RESET SCROLL (Anti-glitch al cambio mese) ---
   useLayoutEffect(() => {
     if (containerRef.current) {
-        containerRef.current.style.scrollBehavior = 'auto'; // Stop animazioni
+        containerRef.current.style.scrollBehavior = 'auto'; // Disabilita animazione per reset istantaneo
         if (lastNavDirection.current === 'prev') {
-            // Se torno indietro, mi metto alla fine (meno un po' di margine per non triggerare subito il next)
-            containerRef.current.scrollLeft = containerRef.current.scrollWidth - containerRef.current.clientWidth - 2;
+            containerRef.current.scrollLeft = containerRef.current.scrollWidth;
         } else {
-            // Se vado avanti, mi metto all'inizio
             containerRef.current.scrollLeft = 0;
         }
         lastNavDirection.current = 'next';
     }
   }, [currentDate, viewMode]);
 
-  // --- 3. LOGICA MOUSE DRAG (BLOCCATA AI BORDI) ---
+  // --- 3. MOUSE DRAG (GRAB) PER DESKTOP ---
   const handleMouseDown = (e) => {
+    // Se clicco su un'attività, lascio gestire a interact.js
     if (e.target.closest('.draggable-task')) return;
     
     dragRef.current.isDown = true;
@@ -92,40 +94,35 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
   const handleMouseMove = (e) => {
     if (!dragRef.current.isDown) return;
     e.preventDefault();
-    
     const x = e.pageX - containerRef.current.offsetLeft;
-    const walk = (x - dragRef.current.startX) * 1.5; // Velocità
-    let newScrollLeft = dragRef.current.scrollLeft - walk;
-
-    // --- PROTEZIONE BORDI (CLAMPING) ---
-    // Non permettere di trascinare oltre i limiti fisici (evita il bianco)
-    const maxScroll = containerRef.current.scrollWidth - containerRef.current.clientWidth;
+    const walk = (x - dragRef.current.startX) * 1.5; // Velocità scroll
     
-    if (newScrollLeft < 0) newScrollLeft = 0;
-    if (newScrollLeft > maxScroll) newScrollLeft = maxScroll;
-
-    containerRef.current.scrollLeft = newScrollLeft;
+    // CLAMPING: Non andare oltre i bordi (evita schermo nero)
+    let newScroll = dragRef.current.scrollLeft - walk;
+    const maxScroll = containerRef.current.scrollWidth - containerRef.current.clientWidth;
+    if (newScroll < 0) newScroll = 0;
+    if (newScroll > maxScroll) newScroll = maxScroll;
+    
+    containerRef.current.scrollLeft = newScroll;
   };
 
-  // --- 4. GESTIONE SCROLL NATIVO (TRIGGER NAVIGAZIONE) ---
+  // --- 4. GESTIONE SCROLL (TRIGGER NAVIGAZIONE) ---
   const handleScroll = () => {
     if (!containerRef.current || !onNavigate) return;
-    
     const { scrollLeft, scrollWidth, clientWidth } = containerRef.current;
     
-    // Trigger sensibile ai bordi (con tolleranza minima)
-    if (scrollLeft <= 0) {
-       // Sei all'inizio
-       // Opzionale: onNavigate('prev'); lastNavDirection.current = 'prev';
-    } else if (Math.ceil(scrollLeft + clientWidth) >= scrollWidth) {
-       // Sei arrivato alla fine esatta -> Cambia Mese
+    // Se arrivo a fine corsa (con tolleranza)
+    if (Math.ceil(scrollLeft + clientWidth) >= scrollWidth - 2) {
        onNavigate('next'); 
        lastNavDirection.current = 'next';
-    }
+    } 
+    // Opzionale: gestire il 'prev' se arrivo a 0
   };
 
-  // --- 5. INTERACT.JS (SOLO ATTIVITÀ) ---
+  // --- 5. INTERACT.JS (DRAG ATTIVITÀ) ---
   useEffect(() => {
+    if (!containerRef.current) return;
+
     const interactable = interact('.draggable-task').draggable({
       inertia: true,
       autoScroll: {
@@ -150,16 +147,18 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
           const x = parseFloat(target.getAttribute('data-x')) || 0;
           const unitsMoved = Math.round(x / COLUMN_WIDTH);
           const activityId = target.getAttribute('data-id');
-          const activity = activities.find(a => String(a.id) === String(activityId));
-
-          if (activity && unitsMoved !== 0) {
-            let newStart;
-            if (viewMode === 'year') {
-                newStart = addDays(new Date(activity.start), unitsMoved * 30);
-            } else {
-                newStart = addDays(new Date(activity.start), unitsMoved);
+          
+          if (activities) {
+            const activity = activities.find(a => String(a.id) === String(activityId));
+            if (activity && unitsMoved !== 0) {
+                let newStart;
+                if (viewMode === 'year') {
+                    newStart = addDays(new Date(activity.start), unitsMoved * 30);
+                } else {
+                    newStart = addDays(new Date(activity.start), unitsMoved);
+                }
+                if (onUpdateActivity) onUpdateActivity({ ...activity, start: newStart });
             }
-            onUpdateActivity({ ...activity, start: newStart });
           }
 
           target.style.transform = 'none';
@@ -173,88 +172,83 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
   }, [activities, viewMode, onUpdateActivity]);
 
   return (
-    <div className="flex-1 overflow-hidden flex flex-col bg-background relative select-none">
+    <div className="flex-1 overflow-hidden flex flex-col bg-white dark:bg-black relative select-none w-full h-full">
       
-      {/* AREA SCROLLABILE PRINCIPALE */}
+      {/* AREA SCROLLABILE */}
       <div 
         ref={containerRef}
-        // "overscroll-none" è fondamentale: blocca l'effetto elastico bianco su Mac/iOS
-        className="flex-1 overflow-x-auto overflow-y-hidden relative cursor-grab active:cursor-grabbing overscroll-x-none"
+        className="flex-1 overflow-x-auto overflow-y-hidden relative cursor-grab active:cursor-grabbing"
+        // overscroll-none è fondamentale per evitare lo schermo bianco su Mac/iOS
+        style={{ scrollBehavior: 'smooth', overscrollBehaviorX: 'none' }} 
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseLeave}
+        onMouseLeave={handleMouseUp}
         onMouseMove={handleMouseMove}
         onScroll={handleScroll}
       >
-        <div 
-            className="relative h-full flex" 
-            // Aggiungiamo 1px extra per evitare problemi di arrotondamento
-            style={{ width: `${totalWidth}px`, minWidth: '100%' }} 
-        >
+        <div className="relative h-full flex" style={{ width: `${totalWidth}px`, minWidth: '100%' }}>
             
-          {/* GRIGLIA + COLONNE */}
+          {/* COLONNE E GRIGLIA */}
           {days.map((day, i) => (
              <div 
                 key={i} 
-                className="flex-shrink-0 h-full border-r border-border/40 relative group"
+                className="flex-shrink-0 h-full border-r border-gray-200 dark:border-zinc-800 relative group bg-white dark:bg-black"
                 style={{ width: `${COLUMN_WIDTH}px` }}
-                onDoubleClick={() => onDateLongPress(day)}
+                onDoubleClick={() => onDateLongPress && onDateLongPress(day)}
                 onTouchStart={(e) => {
-                    const timer = setTimeout(() => onDateLongPress(day), 600);
-                    e.target.ontouchend = () => clearTimeout(timer);
+                    if(onDateLongPress) {
+                        const timer = setTimeout(() => onDateLongPress(day), 600);
+                        e.target.ontouchend = () => clearTimeout(timer);
+                    }
                 }}
              >
-                {/* HEADER (Sticky simulato per cella) */}
-                <div className="h-14 border-b border-border bg-background/95 backdrop-blur-sm flex flex-col justify-center items-center sticky top-0 z-30">
-                    <span className="text-[10px] font-black uppercase text-muted-foreground tracking-wider">
-                        {timeHeader[i].label}
+                {/* HEADER (Sticky simulato per ogni colonna) */}
+                <div className="h-14 border-b border-gray-200 dark:border-zinc-800 bg-gray-50/95 dark:bg-zinc-900/95 flex flex-col justify-center items-center sticky top-0 z-30 pointer-events-none select-none">
+                    <span className="text-[10px] font-black uppercase text-gray-400 dark:text-zinc-500 tracking-wider">
+                        {timeHeader[i]?.label}
                     </span>
-                    <span className={`text-sm font-bold mt-0.5 ${timeHeader[i].isToday ? 'text-primary' : 'text-foreground'}`}>
-                        {timeHeader[i].sub}
+                    <span className={`text-sm font-bold mt-0.5 ${timeHeader[i]?.isToday ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-zinc-300'}`}>
+                        {timeHeader[i]?.sub}
                     </span>
                 </div>
-
-                {/* SFONDO HOVER */}
-                <div className="absolute inset-0 top-14 bg-transparent group-hover:bg-accent/30 pointer-events-none transition-colors" />
+                {/* Effetto Hover Sfondo */}
+                <div className="absolute inset-0 top-14 hover:bg-gray-100/50 dark:hover:bg-zinc-800/50 pointer-events-none transition-colors" />
              </div>
           ))}
 
-          {/* COLONNA FANTASMA FINALE (Buffer visivo per evitare il bianco puro) */}
-          <div className="flex-shrink-0 w-20 h-full border-r border-border/40 bg-accent/10 flex items-center justify-center">
-             <span className="text-xs text-muted-foreground rotate-90 whitespace-nowrap">
-                Carico...
-             </span>
+          {/* COLONNA BUFFER (Evita il bianco a fine corsa) */}
+          <div className="flex-shrink-0 w-40 h-full border-r border-gray-200 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900/50 flex items-center justify-center">
+             <span className="text-xs text-gray-400 rotate-90 whitespace-nowrap">Carico...</span>
           </div>
 
           {/* LINEA OGGI */}
           {viewMode !== 'year' && days.some(d => isSameDay(d, new Date())) && (
              <div 
-                className="absolute top-14 bottom-0 border-l-2 border-primary z-10 pointer-events-none opacity-50 dashed"
-                style={{ 
-                    left: `${(days.findIndex(d => isSameDay(d, new Date())) * COLUMN_WIDTH) + (COLUMN_WIDTH/2)}px` 
-                }}
+                className="absolute top-14 bottom-0 border-l-2 border-blue-500 z-10 pointer-events-none opacity-50 dashed"
+                style={{ left: `${(days.findIndex(d => isSameDay(d, new Date())) * COLUMN_WIDTH) + (COLUMN_WIDTH/2)}px` }}
              />
           )}
 
-          {/* ATTIVITÀ */}
+          {/* ATTIVITÀ RENDERIZZATE */}
           <div className="absolute top-14 left-0 right-0 bottom-0 pointer-events-none">
              <div className="relative w-full h-full">
-                {activities.map((activity, index) => {
+                {activities && activities.map((activity, index) => {
                   const startIdx = viewMode === 'year' 
                     ? days.findIndex(d => d.getMonth() === activity.start.getMonth() && d.getFullYear() === activity.start.getFullYear())
                     : days.findIndex(d => isSameDay(d, activity.start));
                   
+                  // Se fuori range a destra
                   if (startIdx === -1 && activity.start > days[days.length-1]) return null;
 
                   let left = startIdx * COLUMN_WIDTH;
                   let width = (viewMode === 'year' ? activity.days / 30 : activity.days) * COLUMN_WIDTH;
 
+                  // Taglio a sinistra se inizia prima
                   if (startIdx === -1 && activity.start < days[0]) {
                      const diff = Math.ceil((days[0] - activity.start) / (1000 * 60 * 60 * 24));
                      width -= diff * COLUMN_WIDTH;
                      left = 0;
                   }
-                  
                   if (width <= 0) return null;
 
                   return (
@@ -262,7 +256,7 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
                       key={activity.id}
                       data-id={activity.id}
                       className={`draggable-task absolute h-10 mb-2 rounded-xl flex items-center px-3 shadow-sm border border-white/10 pointer-events-auto cursor-grab active:cursor-grabbing hover:brightness-110 touch-none ${activity.color}`}
-                      onClick={(e) => { e.stopPropagation(); onEditActivity(activity); }}
+                      onClick={(e) => { e.stopPropagation(); onEditActivity && onEditActivity(activity); }}
                       style={{
                         left: `${left}px`,
                         width: `${width}px`,
@@ -279,7 +273,6 @@ export default function Gantt({ currentDate, viewMode, activities, onUpdateActiv
                 })}
              </div>
           </div>
-
         </div>
       </div>
     </div>
