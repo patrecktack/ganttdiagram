@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, ChevronLeft, ChevronRight, X, LogOut, Moon, Sun, Calendar, Trash2, Settings, User, Lock, Mail, AlertTriangle, AlertCircle, CheckCircle } from 'lucide-react';
+import { 
+  Plus, ChevronLeft, ChevronRight, X, LogOut, Moon, Sun, 
+  Calendar, Trash2, Settings, User, Lock, Mail, AlertTriangle, 
+  AlertCircle, CheckCircle 
+} from 'lucide-react';
 import { 
   format, addDays, addWeeks, addMonths, addYears, 
   differenceInCalendarDays, startOfDay, 
@@ -260,8 +264,8 @@ export default function App() {
   if (!session) return <><button onClick={() => setIsDarkMode(!isDarkMode)} className="fixed top-6 right-6 p-3 rounded-full bg-gray-100 dark:bg-zinc-800 hover:scale-110 transition-transform z-50 text-black dark:text-white">{isDarkMode ? <Sun size={20} /> : <Moon size={20} />}</button><Login /></>;
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden select-none bg-gray-50 text-slate-900 dark:bg-black dark:text-white transition-colors duration-500 font-sans">
-      <header className="px-6 py-4 flex flex-col sm:flex-row justify-between items-center animate-enter z-50 gap-4">
+    <div className="h-screen flex flex-col overflow-hidden select-none bg-white text-slate-900 dark:bg-black dark:text-white transition-colors duration-500 font-sans">
+      <header className="px-6 py-4 flex flex-col sm:flex-row justify-between items-center z-50 gap-4 bg-white/95 dark:bg-black/95 backdrop-blur-sm border-b border-gray-100 dark:border-zinc-900 h-20 shrink-0">
         <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto relative" ref={dropdownRef}>
           <div className="flex items-center gap-1 rounded-full p-1 pr-5 shadow-sm border transition-colors bg-white border-gray-100 dark:bg-zinc-900 dark:border-zinc-800 relative z-20">
             <button onClick={() => handleNavigate('prev')} className="p-2 rounded-full transition-colors hover:bg-gray-100 dark:hover:bg-zinc-800"><ChevronLeft size={18}/></button>
@@ -274,7 +278,7 @@ export default function App() {
               <div className="mt-2 pt-2 border-t border-gray-100 dark:border-zinc-800"><button onClick={() => { setCurrentDate(new Date()); setIsDateDropdownOpen(false); }} className="w-full py-2 text-xs font-bold text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl">Torna a Oggi</button></div>
             </div>
           )}
-          <div className="flex p-1 bg-gray-200 dark:bg-zinc-900 rounded-xl">
+          <div className="flex p-1 bg-gray-100 dark:bg-zinc-900 rounded-xl">
               {['week', 'month', 'year'].map((m) => (<button key={m} onClick={() => setViewMode(m)} className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide transition-all ${viewMode === m ? 'bg-white dark:bg-zinc-700 shadow-sm text-black dark:text-white' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-800 dark:hover:text-zinc-300'}`}>{{week: 'Sett', month: 'Mese', year: 'Anno'}[m]}</button>))}
           </div>
         </div>
@@ -288,8 +292,8 @@ export default function App() {
         </div>
       </header>
 
-      {/* GANTT CONTAINER CON HEIGHT FIX */}
-      <div className="flex-1 w-full overflow-hidden relative">
+      {/* GANTT: WRAPPER FISSO PER NON FAR COLLASSARE L'ALTEZZA */}
+      <div className="flex-1 w-full overflow-hidden relative bg-white dark:bg-black">
           <Gantt 
             currentDate={currentDate} 
             setCurrentDate={setCurrentDate} 
