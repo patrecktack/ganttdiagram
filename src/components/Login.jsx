@@ -29,7 +29,8 @@ export default function Login() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin, 
+        // MODIFICA CRUCIALE: Indirizzo esatto del tuo progetto GitHub Pages
+        redirectTo: 'https://patrecktack.github.io/ganttdiagram/', 
         queryParams: { prompt: 'select_account' },
       },
     });
@@ -71,7 +72,8 @@ export default function Login() {
     setSuccessMsg('');
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin,
+      // MODIFICA CRUCIALE: Anche qui l'indirizzo esatto
+      redirectTo: 'https://patrecktack.github.io/ganttdiagram/',
     });
 
     if (error) setErrorMsg(error.message);
