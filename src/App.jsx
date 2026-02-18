@@ -1,9 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Plus, ChevronLeft, ChevronRight, X, LogOut, Moon, Sun, 
-  Calendar, Trash2, Settings, User, Lock, Mail, AlertTriangle, 
-  AlertCircle, CheckCircle 
-} from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, X, LogOut, Moon, Sun, Calendar, Trash2, Settings, User, Lock, Mail, AlertTriangle, AlertCircle, CheckCircle } from 'lucide-react';
 import { 
   format, addDays, addWeeks, addMonths, addYears, 
   differenceInCalendarDays, startOfDay, 
@@ -292,8 +288,8 @@ export default function App() {
         </div>
       </header>
 
-      {/* GANTT: FIX SCHERMO NERO - WRAPPER FONDAMENTALE */}
-      <div className="flex-1 overflow-hidden relative">
+      {/* GANTT CONTAINER CON HEIGHT FIX */}
+      <div className="flex-1 w-full overflow-hidden relative">
           <Gantt 
             currentDate={currentDate} 
             setCurrentDate={setCurrentDate} 
@@ -340,7 +336,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL IMPOSTAZIONI ACCOUNT */}
       {isSettingsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 backdrop-blur-md bg-black/40 dark:bg-black/80" onClick={() => setIsSettingsOpen(false)} />
