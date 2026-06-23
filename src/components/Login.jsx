@@ -127,7 +127,18 @@ const handleGithubLogin = async () => {
                 </div>
               </div>
             )}
+<button onClick={handleGithubLogin} type="button" className="w-full py-3 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-2xl font-bold text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-zinc-700 active:scale-95 transition-all flex items-center justify-center gap-3 shadow-sm">
+      <GithubIcon /><span>Accedi con GitHub</span>
+    </button>
 
+    <div className="relative flex py-2 items-center mt-3">
+        <div className="flex-grow border-t border-gray-200 dark:border-zinc-800"></div>
+        <span className="flex-shrink-0 mx-4 text-gray-400 text-xs font-bold uppercase tracking-widest">Oppure</span>
+        <div className="flex-grow border-t border-gray-200 dark:border-zinc-800"></div>
+    </div>
+  </div>
+)}
+        
             {isResetMode ? (
               <form onSubmit={handleResetPassword} className="space-y-4">
                  <div className="space-y-1 relative"><Mail className="absolute left-4 top-4 text-gray-400" size={20} /><input type="email" placeholder="La tua email" value={email} onChange={(e) => { setEmail(e.target.value); setErrorMsg(''); }} className="w-full pl-12 pr-4 py-4 bg-gray-50 dark:bg-zinc-800 rounded-2xl border-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all outline-none font-medium dark:text-white" required /></div>
