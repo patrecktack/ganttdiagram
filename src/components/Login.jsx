@@ -37,7 +37,19 @@ export default function Login() {
     if (error) setErrorMsg(error.message);
     setLoading(false);
   };
-
+const handleGithubLogin = async () => {
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'github',
+      options: {
+        // MODIFICA CRUCIALE: Indirizzo esatto del tuo progetto GitHub Pages
+        redirectTo: 'https://patrecktack.github.io/ganttdiagram/', 
+        queryParams: { prompt: 'select_account' },
+      },
+    });
+    if (error) setErrorMsg(error.message);
+    setLoading(false);
+  };
   const handleAuth = async (e) => {
     e.preventDefault();
     setLoading(true);
